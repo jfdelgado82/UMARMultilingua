@@ -32978,5 +32978,15 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
+  },
+  {
+    "idPalabra": "1",
+    "idDiccionario": "6",
+    "nombrePalabra": "nuevo",
+    "lexema": null,
+    "gramema": null,
+    "estatus": null,
+    "categoriaGramatical": "16475",
+    "traduccion": "prueba"
   }
 ]
