@@ -32,7 +32,7 @@ async function obtenerArchivo() {
 }
 
 app.get('/', (req, res) => {
-    res.send('Backend funcionando correctamente 🚀');
+    res.json({ mensaje: 'Backend funcionando correctamente 🚀' });
   });
 
 // Endpoint GET: Leer diccionario
