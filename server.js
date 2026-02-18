@@ -21,7 +21,7 @@ const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 async function obtenerArchivo() {
     const res = await axios.get(apiUrl, {
         headers: {
-            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`}`,
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
             Accept: 'application/vnd.github+json'
         }
     });
@@ -61,7 +61,7 @@ app.post('/diccionario', async (req, res) => {
 
         const resp = await axios.put(apiUrl, cuerpo, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
                 Accept: 'application/vnd.github+json'
             }
         });
@@ -88,7 +88,7 @@ app.put('/diccionario/:idPalabra', async (req, res) => {
         };
         const resp = await axios.put(apiUrl, cuerpo, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
                 Accept: 'application/vnd.github+json'
             }
         });
@@ -112,7 +112,7 @@ app.delete('/diccionario/:idPalabra', async (req, res) => {
         };
         const resp = await axios.put(apiUrl, cuerpo, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
                 Accept: 'application/vnd.github+json'
             }
         });
