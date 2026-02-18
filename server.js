@@ -37,13 +37,18 @@ app.get('/', (req, res) => {
 
 // Endpoint GET: Leer diccionario
 app.get('/diccionario', async (req, res) => {
-    const variante = req.query.variante;
-    const { data } = await obtenerArchivo();
-    const filtrado = variante
-        ? data.filter(item => item.idDiccionario === variante)
-        : data;
-    res.json(filtrado);
-    //console.log('variante2:'+variante);
+    try {
+        const variante = req.query.variante;
+        const { data } = await obtenerArchivo();
+
+        const filtrado = variante
+            ? data.filter(item => item.idDiccionario === variante)
+            : data;
+
+        res.json(filtrado);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Endpoint POST: Agregar registro
