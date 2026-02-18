@@ -122,4 +122,5 @@ app.delete('/diccionario/:idPalabra', async (req, res) => {
     }
 });
 
-app.listen(3000, () => console.log('Servidor corriendo...'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log('Servidor corriendo...' + PORT +'-'+ process.env.GITHUB_TOKEN));
