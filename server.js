@@ -11,8 +11,8 @@ app.use(bodyParser.json());
 const owner = 'jfdelgado82';
 const repo = 'UMARMultilingua';
 const path = 'chatino.json';
-const token = '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'; // Mantener seguro en backend
 const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+//const token = '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'; // Mantener seguro en backend
 //Git Kraken token: eJwtzLFuwjAQgOF3udlD08bBeOtQMQEdqFR1sc72OVgxsXVOoIB4dySU9Ze+/w7oHNV6yAONoKGV0qLEVkmnnH+z0qrmA73vWre2dhVCoxrlVx0IKJzP0RMv9L6czLSs+mM275Pfh8M2xU33hfT3fe6OfZWfu59b/1v3rbrFIEHAi5jpWgg0WEImBgHV5VdAf4qjLrNN0ZmBroIJvc7cC6aSxVyJNZ0wJnHJPISULyCA/ktkqgYn0OOc0uPxBNp7UOQ=
 //eJwtzLFuwjAQgOF3udlD08bBeOtQMQEdqFR1sc72OVgxsXVOoIB4dySU9Ze+/w7oHNV6yAONoKGV0qLEVkmnnH+z0qrmA73vWre2dhVCoxrlVx0IKJzP0RMv9L6czLSs+mM275Pfh8M2xU33hfT3fe6OfZWfu59b/1v3rbrFIEHAi5jpWgg0WEImBgHV5VdAf4qjLrNN0ZmBroIJvc7cC6aSxVyJNZ0wJnHJPISULyCA/ktkqgYn0OOc0uPxBNp7UOQ=
 
@@ -21,7 +21,7 @@ const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 async function obtenerArchivo() {
     const res = await axios.get(apiUrl, {
         headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`}`,
             Accept: 'application/vnd.github+json'
         }
     });
