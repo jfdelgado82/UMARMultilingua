@@ -1,8 +1,3 @@
-app.use((req, res, next) => {
-  console.log("🔥 REQUEST:", req.method, req.url);
-  next();
-});
-
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
@@ -11,6 +6,11 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+
+app.use((req, res, next) => {
+  console.log("🔥 REQUEST:", req.method, req.url);
+  next();
+});
 
 // Configuración del repositorio
 const owner = 'jfdelgado82';
