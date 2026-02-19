@@ -24,6 +24,22 @@ const rutas = {
 async function obtenerArchivo(agrupacion) {
 
     const path = rutas[Number(agrupacion)];
+
+    if (!path) {
+        throw new Error('Variante no válida: ' + agrupacion);
+    }
+
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${path}`;
+    console.log("Consultando RAW:", rawUrl);
+
+    const res = await axios.get(rawUrl);
+
+    // Ya viene como JSON, no necesitas base64
+    return { data: res.data };
+}
+/*async function obtenerArchivo(agrupacion) {
+
+    const path = rutas[Number(agrupacion)];
     if (!path) {
         throw new Error('Variante no válida: ' + numero);
     }
@@ -42,7 +58,7 @@ async function obtenerArchivo(agrupacion) {
     console.log("Tamaño del content:", content.length);
     console.log("Primeros 200 caracteres:", content.substring(0,200));
     return { data, sha };
-}
+}*/
 
 app.get('/', (req, res) => {
     res.json({ mensaje: 'Backend funcionando correctamente 🚀' });
