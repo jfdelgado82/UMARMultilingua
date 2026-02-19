@@ -94,9 +94,18 @@ app.get('/diccionario', async (req, res) => {
 app.post('/diccionario', async (req, res) => {
     try {
         const nuevoRegistro = req.body;
-        const { variante, agrupacion } = req.query;
+        const { agrupacion } = req.query;
+
+        const path = rutas[Number(agrupacion)];
+        if (!path) {
+            return res.status(400).json({ error: 'Agrupación inválida' });
+        }
+
         const { data, sha } = await obtenerArchivo(agrupacion);
+
         data.push(nuevoRegistro);
+
+        const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
         const cuerpo = {
             message: 'Agregado desde backend',
@@ -104,16 +113,22 @@ app.post('/diccionario', async (req, res) => {
             sha
         };
 
-        const resp = await axios.put(apiUrl, cuerpo, {
+        const resp = await axios.put(url, cuerpo, {
             headers: {
                 Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
                 Accept: 'application/vnd.github+json'
             }
         });
+
+        // 🔥 actualizar cache después de escribir
+        cacheDiccionarios[agrupacion] = data;
+        cacheSHA[agrupacion] = resp.data.content.sha;
+
         res.json(resp.data);
+
     } catch (err) {
-           console.error("ERROR COMPLETO:", err.response?.data || err.message);
-           res.status(500).json({error: err.response?.data || err.message});
+        console.error("ERROR COMPLETO:", err.response?.data || err.message);
+        res.status(500).json({ error: err.response?.data || err.message });
     }
 });
 
@@ -169,7 +184,7 @@ app.delete('/diccionario/:idPalabra', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Servidor corriendo...' + PORT +'-'+ process.env.GITHUB_TOKEN));
+app.listen(PORT, () => console.log('Servidor corriendo...' + PORT));
 
 
 
