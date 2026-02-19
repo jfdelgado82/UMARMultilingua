@@ -19,30 +19,48 @@ const rutas = {
 //Git Kraken token: eJwtzLFuwjAQgOF3udlD08bBeOtQMQEdqFR1sc72OVgxsXVOoIB4dySU9Ze+/w7oHNV6yAONoKGV0qLEVkmnnH+z0qrmA73vWre2dhVCoxrlVx0IKJzP0RMv9L6czLSs+mM275Pfh8M2xU33hfT3fe6OfZWfu59b/1v3rbrFIEHAi5jpWgg0WEImBgHV5VdAf4qjLrNN0ZmBroIJvc7cC6aSxVyJNZ0wJnHJPISULyCA/ktkqgYn0OOc0uPxBNp7UOQ=
 //eJwtzLFuwjAQgOF3udlD08bBeOtQMQEdqFR1sc72OVgxsXVOoIB4dySU9Ze+/w7oHNV6yAONoKGV0qLEVkmnnH+z0qrmA73vWre2dhVCoxrlVx0IKJzP0RMv9L6czLSs+mM275Pfh8M2xU33hfT3fe6OfZWfu59b/1v3rbrFIEHAi5jpWgg0WEImBgHV5VdAf4qjLrNN0ZmBroIJvc7cC6aSxVyJNZ0wJnHJPISULyCA/ktkqgYn0OOc0uPxBNp7UOQ=
 
-
-// Obtener SHA y contenido del archivo
-async function obtenerArchivo(agrupacion) {
+async function obtenerArchivo(agrupacion, forzar = false) {
 
     const path = rutas[Number(agrupacion)];
     if (!path) {
-        throw new Error('Variante no válida: ' + numero);
+        throw new Error('Agrupación no válida: ' + agrupacion);
     }
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-    console.log(apiUrl);
-    console.log("TOKEN:", process.env.GITHUB_TOKEN);
-    const res = await axios.get(apiUrl, {
+
+    // Si está en cache y no es forzado
+    if (!forzar && cacheDiccionarios[agrupacion]) {
+        return {
+            data: cacheDiccionarios[agrupacion],
+            sha: cacheSHA[agrupacion]
+        };
+    }
+
+    // 1️⃣ Obtener metadata para el SHA
+    const metaUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    const meta = await axios.get(metaUrl, {
         headers: {
             Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
             Accept: 'application/vnd.github+json'
         }
     });
-    const sha = res.data.sha;
-    const content = Buffer.from(res.data.content, 'base64').toString();
-    const data = JSON.parse(content);
-    console.log("Tamaño del content:", content.length);
-    console.log("Primeros 200 caracteres:", content.substring(0,200));
+
+    const sha = meta.data.sha;
+    const downloadUrl = meta.data.download_url;
+
+    // 2️⃣ Descargar archivo completo desde RAW
+    const raw = await axios.get(downloadUrl);
+
+    const data = raw.data;
+
+    // Guardar en cache
+    cacheDiccionarios[agrupacion] = data;
+    cacheSHA[agrupacion] = sha;
+
+    console.log(`Archivo ${path} cargado correctamente (${data.length} registros)`);
+
     return { data, sha };
 }
+
 
 app.get('/', (req, res) => {
     res.json({ mensaje: 'Backend funcionando correctamente 🚀' });
