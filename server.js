@@ -29,6 +29,7 @@ async function obtenerArchivo(agrupacion) {
     }
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
     console.log(apiUrl);
+    console.log("TOKEN:", process.env.GITHUB_TOKEN);
     const res = await axios.get(apiUrl, {
         headers: {
             Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
