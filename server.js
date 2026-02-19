@@ -10,15 +10,24 @@ app.use(bodyParser.json());
 // Configuración del repositorio
 const owner = 'jfdelgado82';
 const repo = 'UMARMultilingua';
-const path = 'chatino.json';
-const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+const path = '';
+const apiUrl = '';
 //const token = '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'; // Mantener seguro en backend
 //Git Kraken token: eJwtzLFuwjAQgOF3udlD08bBeOtQMQEdqFR1sc72OVgxsXVOoIB4dySU9Ze+/w7oHNV6yAONoKGV0qLEVkmnnH+z0qrmA73vWre2dhVCoxrlVx0IKJzP0RMv9L6czLSs+mM275Pfh8M2xU33hfT3fe6OfZWfu59b/1v3rbrFIEHAi5jpWgg0WEImBgHV5VdAf4qjLrNN0ZmBroIJvc7cC6aSxVyJNZ0wJnHJPISULyCA/ktkqgYn0OOc0uPxBNp7UOQ=
 //eJwtzLFuwjAQgOF3udlD08bBeOtQMQEdqFR1sc72OVgxsXVOoIB4dySU9Ze+/w7oHNV6yAONoKGV0qLEVkmnnH+z0qrmA73vWre2dhVCoxrlVx0IKJzP0RMv9L6czLSs+mM275Pfh8M2xU33hfT3fe6OfZWfu59b/1v3rbrFIEHAi5jpWgg0WEImBgHV5VdAf4qjLrNN0ZmBroIJvc7cC6aSxVyJNZ0wJnHJPISULyCA/ktkqgYn0OOc0uPxBNp7UOQ=
 
 
 // Obtener SHA y contenido del archivo
-async function obtenerArchivo() {
+async function obtenerArchivo(agrupacion) {
+    switch (agrupacion){
+        case 1: path = 'zapoteco.json';
+                break;
+        case 2: path = 'chatino.json';
+                break;
+        default: break;
+    }
+    apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+    
     const res = await axios.get(apiUrl, {
         headers: {
             Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
@@ -39,7 +48,8 @@ app.get('/', (req, res) => {
 app.get('/diccionario', async (req, res) => {
     try {
         const variante = req.query.variante;
-        const { data } = await obtenerArchivo();
+        const agrupacion = req.query.agrupacion;
+        const { data } = await obtenerArchivo(agrupacion);
 
         const filtrado = variante
             ? data.filter(item => item.idDiccionario === variante)
