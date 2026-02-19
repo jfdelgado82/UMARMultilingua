@@ -89,7 +89,8 @@ app.get('/diccionario', async (req, res) => {
 app.post('/diccionario', async (req, res) => {
     try {
         const nuevoRegistro = req.body;
-        const { data, sha } = await obtenerArchivo();
+        const agrupacion = req.query.agrupacion;
+        const { data, sha } = await obtenerArchivo(agrupacion);
         data.push(nuevoRegistro);
 
         const cuerpo = {
