@@ -137,25 +137,41 @@ app.put('/diccionario/:idPalabra', async (req, res) => {
     try {
         const idPalabra = req.params.idPalabra;
         const updates = req.body;
-        const { data, sha } = await obtenerArchivo();
+        const { agrupacion } = req.query;
+
+        const path = rutas[Number(agrupacion)];
+        if (!path) return res.status(400).json({ error: 'Agrupación inválida' });
+
+        const { data, sha } = await obtenerArchivo(agrupacion);
+
         const index = data.findIndex(item => item.idPalabra === idPalabra);
         if (index === -1) return res.status(404).json({ error: 'No encontrado' });
+
         data[index] = { ...data[index], ...updates };
+
+        const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
         const cuerpo = {
             message: 'Actualización desde backend',
             content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
             sha
         };
-        const resp = await axios.put(apiUrl, cuerpo, {
+
+        const resp = await axios.put(url, cuerpo, {
             headers: {
                 Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
                 Accept: 'application/vnd.github+json'
             }
         });
+
+        // 🔥 actualizar cache
+        cacheDiccionarios[agrupacion] = data;
+        cacheSHA[agrupacion] = resp.data.content.sha;
+
         res.json(resp.data);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("ERROR COMPLETO:", err.response?.data || err.message);
+        res.status(500).json({ error: err.response?.data || err.message });
     }
 });
 
@@ -163,23 +179,38 @@ app.put('/diccionario/:idPalabra', async (req, res) => {
 app.delete('/diccionario/:idPalabra', async (req, res) => {
     try {
         const idPalabra = req.params.idPalabra;
-        const { data, sha } = await obtenerArchivo();
+        const { agrupacion } = req.query;
+
+        const path = rutas[Number(agrupacion)];
+        if (!path) return res.status(400).json({ error: 'Agrupación inválida' });
+
+        const { data, sha } = await obtenerArchivo(agrupacion);
+
         const nuevoData = data.filter(item => item.idPalabra !== idPalabra);
+
+        const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
         const cuerpo = {
             message: 'Eliminación desde backend',
             content: Buffer.from(JSON.stringify(nuevoData, null, 2)).toString('base64'),
             sha
         };
-        const resp = await axios.put(apiUrl, cuerpo, {
+
+        const resp = await axios.put(url, cuerpo, {
             headers: {
                 Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
                 Accept: 'application/vnd.github+json'
             }
         });
+
+        // 🔥 actualizar cache
+        cacheDiccionarios[agrupacion] = nuevoData;
+        cacheSHA[agrupacion] = resp.data.content.sha;
+
         res.json(resp.data);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("ERROR COMPLETO:", err.response?.data || err.message);
+        res.status(500).json({ error: err.response?.data || err.message });
     }
 });
 
