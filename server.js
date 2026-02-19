@@ -107,7 +107,8 @@ app.post('/diccionario', async (req, res) => {
         });
         res.json(resp.data);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+           console.error("ERROR COMPLETO:", err.response?.data || err.message);
+           res.status(500).json({error: err.response?.data || err.message});
     }
 });
 
