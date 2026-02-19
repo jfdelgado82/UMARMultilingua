@@ -1,3 +1,8 @@
+app.use((req, res, next) => {
+  console.log("🔥 REQUEST:", req.method, req.url);
+  next();
+});
+
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
