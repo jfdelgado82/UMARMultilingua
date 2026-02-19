@@ -38,6 +38,8 @@ async function obtenerArchivo(agrupacion) {
     const sha = res.data.sha;
     const content = Buffer.from(res.data.content, 'base64').toString();
     const data = JSON.parse(content);
+    console.log("Tamaño del content:", content.length);
+    console.log("Primeros 200 caracteres:", content.substring(0,200));
     return { data, sha };
 }
 
