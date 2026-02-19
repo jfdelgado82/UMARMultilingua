@@ -51,19 +51,6 @@ app.get('/', (req, res) => {
 // Endpoint GET: Leer diccionario
 app.get('/diccionario', async (req, res) => {
     try {
-        const agrupacion = req.query.agrupacion;
-
-        const data = await obtenerArchivo(agrupacion);
-
-        res.json(data);
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: error.message });
-    }
-});
-/*app.get('/diccionario', async (req, res) => {
-    try {
         const variante = req.query.variante;
         const agrupacion = req.query.agrupacion;
         const { data } = await obtenerArchivo(agrupacion);
@@ -76,7 +63,7 @@ app.get('/diccionario', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-});*/
+});
 
 // Endpoint POST: Agregar registro
 app.post('/diccionario', async (req, res) => {
