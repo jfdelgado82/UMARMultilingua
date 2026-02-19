@@ -30,13 +30,29 @@ async function obtenerArchivo(agrupacion) {
     }
 
     const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${path}`;
+
+    const response = await axios.get(rawUrl);
+
+    return response.data; // ⚠️ sin JSON.parse
+}
+/*async function obtenerArchivo(agrupacion) {
+
+    const path = rutas[Number(agrupacion)];
+
+    if (!path) {
+        throw new Error('Variante no válida: ' + agrupacion);
+    }
+
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${path}`;
     console.log("Consultando RAW:", rawUrl);
 
     const res = await axios.get(rawUrl);
 
     // Ya viene como JSON, no necesitas base64
     return { data: res.data };
-}
+}*/
+
+
 /*async function obtenerArchivo(agrupacion) {
 
     const path = rutas[Number(agrupacion)];
@@ -67,6 +83,19 @@ app.get('/', (req, res) => {
 // Endpoint GET: Leer diccionario
 app.get('/diccionario', async (req, res) => {
     try {
+        const agrupacion = req.query.agrupacion;
+
+        const data = await obtenerArchivo(agrupacion);
+
+        res.json(data);
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+});
+/*app.get('/diccionario', async (req, res) => {
+    try {
         const variante = req.query.variante;
         const agrupacion = req.query.agrupacion;
         const { data } = await obtenerArchivo(agrupacion);
@@ -79,7 +108,7 @@ app.get('/diccionario', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-});
+});*/
 
 // Endpoint POST: Agregar registro
 app.post('/diccionario', async (req, res) => {
