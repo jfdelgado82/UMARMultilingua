@@ -24,7 +24,7 @@ const rutas = {
     2: 'chatino.json'
   },
   corpus: {
-    1: 'corpuszapoteco.json',
+    1: 'CorpusZapoteco.json',
     2: 'corpuschatino.json'
   }
 };
