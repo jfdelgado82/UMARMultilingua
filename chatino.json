@@ -32978,5 +32978,15 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
+  },
+  {
+    "idPalabra": "33069",
+    "idDiccionario": "8",
+    "nombrePalabra": "hola",
+    "lexema": "mundo",
+    "gramema": "hola",
+    "estatus": "mundo",
+    "categoriaGramatical": "hola",
+    "traduccion": "mundo"
   }
 ]
