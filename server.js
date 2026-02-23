@@ -185,10 +185,9 @@ app.put('/:tipo/:id', async (req, res) => {
     }
 
     const actualizado = req.body;
-
     const { data, sha, path } = await obtenerArchivo(tipo, agrupacion);
-
-    const index = data.findIndex(d => d.idPalabra === id);
+    const campoId = tipo === 'corpus' ? 'idExpresion' : 'idPalabra';
+    const index = data.findIndex(d => d[campoId] == id);
 
     if (index === -1) {
       return res.status(404).json({ error: 'Registro no encontrado' });
