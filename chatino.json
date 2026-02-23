@@ -33010,5 +33010,15 @@
     "estatus": "xxxx",
     "categoriaGramatical": "tttt",
     "traduccion": "uuuu222"
+  },
+  {
+    "idPalabra": "33075",
+    "idDiccionario": "8",
+    "nombrePalabra": "yyyy",
+    "lexema": "uuuu",
+    "gramema": "iii",
+    "estatus": "ooo",
+    "categoriaGramatical": "ppp",
+    "traduccion": "kkk"
   }
 ]
