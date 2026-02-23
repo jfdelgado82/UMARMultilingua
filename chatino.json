@@ -15191,13 +15191,13 @@
   },
   {
     "idPalabra": "31290",
-    "idDiccionario": "6",
-    "nombrePalabra": "test2222",
-    "lexema": "test1111",
-    "gramema": "test1111",
-    "estatus": "test1111",
-    "categoriaGramatical": "test1111",
-    "traduccion": "test2222"
+    "idDiccionario": "7",
+    "nombrePalabra": "cha",
+    "lexema": null,
+    "gramema": null,
+    "estatus": null,
+    "categoriaGramatical": "16475",
+    "traduccion": "filoso, afilado"
   },
   {
     "idPalabra": "31291",
@@ -32987,16 +32987,6 @@
     "gramema": "loha",
     "estatus": "ohal",
     "categoriaGramatical": "15765",
-    "traduccion": "malo 8888"
-  },
-  {
-    "idPalabra": "31290",
-    "idDiccionario": "6",
-    "nombrePalabra": "test1111",
-    "lexema": "test1111",
-    "gramema": "test1111",
-    "estatus": "test1111",
-    "categoriaGramatical": "test1111",
-    "traduccion": "test1111"
+    "traduccion": "malo 77777"
   }
 ]
