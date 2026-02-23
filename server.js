@@ -98,15 +98,24 @@ app.get('/:tipo', async (req, res) => {
     if (!agrupacion) {
       return res.status(400).json({ error: 'Debe enviar agrupacion' });
     }
-
     const { data } = await obtenerArchivo(tipo, agrupacion);
+    let resultado = data;
 
-    const filtrado = variante
-      ? data.filter(item => item.idDiccionario === variante)
-      : data;
+    if (variante) {
+      const campoFiltro =
+        tipo === 'diccionario'
+          ? 'idDiccionario'
+          : tipo === 'corpus'
+            ? 'idCorpus'
+            : null;
 
-    res.json(filtrado);
-
+      if (campoFiltro) {
+        resultado = data.filter(item =>
+          item[campoFiltro] == variante
+        );
+      }
+    }
+    res.json(resultado);
   } catch (error) {
     console.error(error.message);
     res.status(500).json({ error: error.message });
