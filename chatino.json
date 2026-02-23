@@ -32980,13 +32980,51 @@
     "traduccion": "aconsejar"
   },
   {
-    "idPalabra": "33069",
+    "idPalabra": "33070",
+    "idDiccionario": "8"
+  },
+  {
+    "idPalabra": "33071",
+    "idDiccionario": "8"
+  },
+  {
+    "idPalabra": "33073",
     "idDiccionario": "8",
     "nombrePalabra": "hola",
-    "lexema": "mundo",
-    "gramema": "hola",
-    "estatus": "mundo",
-    "categoriaGramatical": "hola",
-    "traduccion": "mundo"
+    "lexema": "mundio",
+    "gramema": "aaaa",
+    "estatus": "xxxx",
+    "categoriaGramatical": "tttt",
+    "traduccion": "uuuu222"
+  },
+  {
+    "idPalabra": "33074",
+    "idDiccionario": "8",
+    "nombrePalabra": "hola2",
+    "lexema": "mundio",
+    "gramema": "aaaa",
+    "estatus": "xxxx",
+    "categoriaGramatical": "tttt",
+    "traduccion": "uuuu222"
+  },
+  {
+    "idPalabra": "33075",
+    "idDiccionario": "8",
+    "nombrePalabra": "eee",
+    "lexema": "aaa",
+    "gramema": "aaa",
+    "estatus": "aa",
+    "categoriaGramatical": "q",
+    "traduccion": "qq"
+  },
+  {
+    "idPalabra": "33076",
+    "idDiccionario": "8",
+    "nombrePalabra": "wwww",
+    "lexema": "wwww",
+    "gramema": "wwww",
+    "estatus": "wwww",
+    "categoriaGramatical": "wwww",
+    "traduccion": "wwww"
   }
 ]
