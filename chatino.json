@@ -32980,6 +32980,10 @@
     "traduccion": "aconsejar"
   },
   {
+    "idPalabra": "33069",
+    "idDiccionario": "8"
+  },
+  {
     "idPalabra": "33070",
     "idDiccionario": "8"
   },
@@ -33016,15 +33020,5 @@
     "estatus": "aa",
     "categoriaGramatical": "q",
     "traduccion": "qq"
-  },
-  {
-    "idPalabra": "33076",
-    "idDiccionario": "8",
-    "nombrePalabra": "wwww",
-    "lexema": "wwww",
-    "gramema": "wwww",
-    "estatus": "wwww",
-    "categoriaGramatical": "wwww",
-    "traduccion": "wwww"
   }
 ]
