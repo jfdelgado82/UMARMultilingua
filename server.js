@@ -16,9 +16,19 @@ app.use((req, res, next) => {
 const owner = 'jfdelgado82';
 const repo = 'UMARMultilingua';
 const rutas = {
+  diccionario: {
     1: 'zapoteco.json',
     2: 'chatino.json'
+  },
+  corpus: {
+    1: 'corpus_zapoteco.json',
+    2: 'corpus_chatino.json'
+  }
 };
+/*const rutas = {
+    1: 'zapoteco.json',
+    2: 'chatino.json'
+};*/
 
 let cacheDiccionarios = {};
 let cacheSHA = {};
@@ -26,7 +36,48 @@ let cacheSHA = {};
 //Git Kraken token: eJwtzLFuwjAQgOF3udlD08bBeOtQMQEdqFR1sc72OVgxsXVOoIB4dySU9Ze+/w7oHNV6yAONoKGV0qLEVkmnnH+z0qrmA73vWre2dhVCoxrlVx0IKJzP0RMv9L6czLSs+mM275Pfh8M2xU33hfT3fe6OfZWfu59b/1v3rbrFIEHAi5jpWgg0WEImBgHV5VdAf4qjLrNN0ZmBroIJvc7cC6aSxVyJNZ0wJnHJPISULyCA/ktkqgYn0OOc0uPxBNp7UOQ=
 //eJwtzLFuwjAQgOF3udlD08bBeOtQMQEdqFR1sc72OVgxsXVOoIB4dySU9Ze+/w7oHNV6yAONoKGV0qLEVkmnnH+z0qrmA73vWre2dhVCoxrlVx0IKJzP0RMv9L6czLSs+mM275Pfh8M2xU33hfT3fe6OfZWfu59b/1v3rbrFIEHAi5jpWgg0WEImBgHV5VdAf4qjLrNN0ZmBroIJvc7cC6aSxVyJNZ0wJnHJPISULyCA/ktkqgYn0OOc0uPxBNp7UOQ=
 
-async function obtenerArchivo(agrupacion, forzar = false) {
+async function obtenerArchivo(tipo, agrupacion, forzar = false) {
+
+    if (!rutas[tipo]) {
+        throw new Error('Tipo no válido: ' + tipo);
+    }
+
+    const path = rutas[tipo][Number(agrupacion)];
+
+    if (!path) {
+        throw new Error('Agrupación no válida para ' + tipo);
+    }
+
+    if (!forzar && cacheDiccionarios[`${tipo}_${agrupacion}`]) {
+        return {
+            data: cacheDiccionarios[`${tipo}_${agrupacion}`],
+            sha: cacheSHA[`${tipo}_${agrupacion}`]
+        };
+    }
+
+    const metaUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    const meta = await axios.get(metaUrl, {
+        headers: {
+            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            Accept: 'application/vnd.github+json'
+        }
+    });
+
+    const sha = meta.data.sha;
+    const downloadUrl = meta.data.download_url;
+
+    const raw = await axios.get(downloadUrl);
+    const data = raw.data;
+
+    cacheDiccionarios[`${tipo}_${agrupacion}`] = data;
+    cacheSHA[`${tipo}_${agrupacion}`] = sha;
+
+    console.log(`Archivo ${path} cargado (${data.length} registros)`);
+
+    return { data, sha };
+}
+/*async function obtenerArchivo(agrupacion, forzar = false) {
 
     const path = rutas[Number(agrupacion)];
     if (!path) {
@@ -66,10 +117,26 @@ async function obtenerArchivo(agrupacion, forzar = false) {
     console.log(`Archivo ${path} cargado correctamente (${data.length} registros)`);
 
     return { data, sha };
-}
+}*/
 
+app.get('/:tipo', async (req, res) => {
+    try {
+        const { tipo } = req.params;
+        const { variante, agrupacion } = req.query;
 
-app.get('/', (req, res) => {
+        const { data } = await obtenerArchivo(tipo, agrupacion);
+
+        const filtrado = variante
+            ? data.filter(item => item.idDiccionario === variante)
+            : data;
+
+        res.json(filtrado);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+/*app.get('/', (req, res) => {
     res.json({ mensaje: 'Backend funcionando correctamente 🚀' });
   });
 
@@ -88,10 +155,45 @@ app.get('/diccionario', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-});
+});*/
 
 // Endpoint POST: Agregar registro
-app.post('/diccionario', async (req, res) => {
+app.post('/:tipo', async (req, res) => {
+    try {
+        const { tipo } = req.params;
+        const { agrupacion } = req.query;
+        const nuevoRegistro = req.body;
+
+        const { data, sha } = await obtenerArchivo(tipo, agrupacion);
+
+        data.push(nuevoRegistro);
+
+        const path = rutas[tipo][Number(agrupacion)];
+        const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+        const cuerpo = {
+            message: `Agregado a ${tipo}`,
+            content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
+            sha
+        };
+
+        const resp = await axios.put(url, cuerpo, {
+            headers: {
+                Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                Accept: 'application/vnd.github+json'
+            }
+        });
+
+        cacheDiccionarios[`${tipo}_${agrupacion}`] = data;
+        cacheSHA[`${tipo}_${agrupacion}`] = resp.data.content.sha;
+
+        res.json(resp.data);
+
+    } catch (err) {
+        res.status(500).json({ error: err.response?.data || err.message });
+    }
+});
+/*app.post('/diccionario', async (req, res) => {
     try {
         const nuevoRegistro = req.body;
         const { agrupacion } = req.query;
@@ -130,7 +232,7 @@ app.post('/diccionario', async (req, res) => {
         console.error("ERROR COMPLETO:", err.response?.data || err.message);
         res.status(500).json({ error: err.response?.data || err.message });
     }
-});
+});*/
 
 // Endpoint PUT: Actualizar registro
 app.put('/diccionario/:idPalabra', async (req, res) => {
