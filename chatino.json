@@ -32988,5 +32988,15 @@
     "estatus": "ohal",
     "categoriaGramatical": "15765",
     "traduccion": "malo 8888"
+  },
+  {
+    "idPalabra": "31290",
+    "idDiccionario": "6",
+    "nombrePalabra": "test1111",
+    "lexema": "test1111",
+    "gramema": "test1111",
+    "estatus": "test1111",
+    "categoriaGramatical": "test1111",
+    "traduccion": "test1111"
   }
 ]
