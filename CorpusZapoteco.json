@@ -28682,10 +28682,10 @@
   {
     "idExpresion": "5448",
     "idCorpus": "1",
-    "expresion": "test phrase 2",
-    "estatus": "oiaosdiaoisd",
-    "multimedia": "aoioqwie",
-    "traduccion": "ierierieieeeee"
+    "expresion": "frase de prueba 222",
+    "estatus": "unknown",
+    "multimedia": "xxxxxx",
+    "traduccion": "2345w5235345"
   },
   {
     "idExpresion": "5448",
@@ -28700,7 +28700,7 @@
     "idCorpus": "1",
     "expresion": "test de prueba 333333",
     "estatus": "333",
-    "multimedia": "11111111",
-    "traduccion": "666666666"
+    "multimedia": "33333",
+    "traduccion": "3333333"
   }
 ]
