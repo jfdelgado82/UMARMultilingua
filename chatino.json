@@ -32978,5 +32978,15 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
+  },
+  {
+    "idPalabra": "31290",
+    "idDiccionario": "6",
+    "nombrePalabra": "palabra de prueba",
+    "lexema": "aaaa",
+    "gramema": "bbbb",
+    "estatus": "ccc",
+    "categoriaGramatical": "dddd",
+    "traduccion": "eeeee"
   }
 ]
