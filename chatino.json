@@ -15191,13 +15191,13 @@
   },
   {
     "idPalabra": "31290",
-    "idDiccionario": "7",
-    "nombrePalabra": "cha",
-    "lexema": null,
-    "gramema": null,
-    "estatus": null,
-    "categoriaGramatical": "16475",
-    "traduccion": "filoso, afilado"
+    "idDiccionario": "6",
+    "nombrePalabra": "palabra de prueba",
+    "lexema": "aaaa",
+    "gramema": "bbbb",
+    "estatus": "ccc",
+    "categoriaGramatical": "dddd",
+    "traduccion": "xxxxxx"
   },
   {
     "idPalabra": "31291",
