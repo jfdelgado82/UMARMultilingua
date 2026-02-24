@@ -15190,16 +15190,6 @@
     "traduccion": "lo recoger, va a recoger, lo cosechar, va a cosechar"
   },
   {
-    "idPalabra": "31290",
-    "idDiccionario": "6",
-    "nombrePalabra": "palabra de prueba",
-    "lexema": "aaaa",
-    "gramema": "bbbb",
-    "estatus": "ccc",
-    "categoriaGramatical": "dddd",
-    "traduccion": "xxxxxx"
-  },
-  {
     "idPalabra": "31291",
     "idDiccionario": "7",
     "nombrePalabra": "cha",
@@ -32978,15 +32968,5 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
-  },
-  {
-    "idPalabra": "31290",
-    "idDiccionario": "6",
-    "nombrePalabra": "palabra de prueba",
-    "lexema": "aaaa",
-    "gramema": "bbbb",
-    "estatus": "ccc",
-    "categoriaGramatical": "dddd",
-    "traduccion": "eeeee"
   }
 ]
