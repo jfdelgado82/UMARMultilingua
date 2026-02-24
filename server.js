@@ -227,9 +227,7 @@ app.put('/:tipo/:id', async (req, res) => {
 // ============================
 
 app.delete('/:tipo/:id', async (req, res) => {
-
   try {
-
     const { tipo, id } = req.params;
     const { agrupacion } = req.query;
 
@@ -239,7 +237,18 @@ app.delete('/:tipo/:id', async (req, res) => {
 
     const { data, sha, path } = await obtenerArchivo(tipo, agrupacion);
 
-    const nuevosDatos = data.filter(d => d.idPalabra !== id);
+    // 🔥 Elegir campo según tipo
+    const campoId = tipo === 'diccionario'
+      ? 'idPalabra'
+      : 'idExpresion';
+
+    const nuevosDatos = data.filter(d =>
+      String(d[campoId]) !== String(id)
+    );
+
+    if (nuevosDatos.length === data.length) {
+      return res.status(404).json({ error: 'Registro no encontrado' });
+    }
 
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
@@ -252,7 +261,7 @@ app.delete('/:tipo/:id', async (req, res) => {
     const response = await axios.put(url, body, {
       headers: {
         Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json'
+        Accept: 'application/vnd.github.v3+json'
       }
     });
 
