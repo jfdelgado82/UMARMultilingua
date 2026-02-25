@@ -32968,5 +32968,15 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
+  },
+  {
+    "idPalabra": "31290",
+    "idDiccionario": "6",
+    "nombrePalabra": "palabra de prueba 1",
+    "lexema": "hi",
+    "gramema": "jijiji",
+    "estatus": "oiooi",
+    "categoriaGramatical": "yuyyyy",
+    "traduccion": "test 1111111"
   }
 ]
