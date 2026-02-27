@@ -5,6 +5,8 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
@@ -26,6 +28,9 @@ const rutas = {
   corpus: {
     1: 'CorpusZapoteco.json',
     2: 'CorpusChatino.json'
+  },
+  usuarios: {
+    0: 'usuarios.json'
   }
 };
 
@@ -46,13 +51,19 @@ async function obtenerArchivo(tipo, agrupacion, forzar = false) {
     throw new Error('Tipo no válido');
   }
 
-  const path = rutas[tipo][Number(agrupacion)];
+  let path;
+
+  if (tipo === 'usuarios') {
+    path = rutas[tipo][0];
+  } else {
+    path = rutas[tipo][Number(agrupacion)];
+  }
 
   if (!path) {
     throw new Error('Agrupación no válida');
   }
 
-  const key = `${tipo}_${agrupacion}`;
+  const key = `${tipo}_${agrupacion || 0}`;
 
   if (!forzar && cacheData[key]) {
     return {
@@ -80,10 +91,140 @@ async function obtenerArchivo(tipo, agrupacion, forzar = false) {
   cacheData[key] = data;
   cacheSHA[key] = sha;
 
-  console.log(`Archivo ${path} cargado (${data.length} registros)`);
+  console.log(`Archivo ${path} cargado`);
 
   return { data, sha, path };
 }
+
+// ============================
+// MIDDLEWARE JWT
+// ============================
+
+function verificarToken(req, res, next) {
+
+  const header = req.headers.authorization;
+
+  if (!header) {
+    return res.status(401).json({ error: 'Token requerido' });
+  }
+
+  const token = header.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.usuario = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Token inválido' });
+  }
+}
+
+// ============================
+// LOGIN
+// ============================
+
+app.post('/login', async (req, res) => {
+  try {
+
+    const { correoElectronico, contraseña } = req.body;
+
+    if (!correoElectronico || !contraseña) {
+      return res.status(400).json({ error: 'Faltan credenciales' });
+    }
+
+    const { data } = await obtenerArchivo('usuarios', 0);
+
+    const usuario = data.find(u =>
+      u.correoElectronico === correoElectronico
+    );
+
+    if (!usuario) {
+      return res.status(401).json({ error: 'Usuario no encontrado' });
+    }
+
+    const passwordValido = await bcrypt.compare(
+      contraseña,
+      usuario.contraseña
+    );
+
+    if (!passwordValido) {
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    }
+
+    const token = jwt.sign(
+      {
+        correoElectronico: usuario.correoElectronico,
+        rol: usuario.rol
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    res.json({
+      mensaje: 'Login exitoso',
+      token,
+      usuario: {
+        nombre: usuario.nombre,
+        correoElectronico: usuario.correoElectronico,
+        rol: usuario.rol
+      }
+    });
+
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================
+// CREAR USUARIO (Admin)
+// ============================
+
+app.post('/usuarios', verificarToken, async (req, res) => {
+  try {
+
+    if (req.usuario.rol !== 'admin') {
+      return res.status(403).json({ error: 'Solo admin puede crear usuarios' });
+    }
+
+    const { nombre, correoElectronico, contraseña, rol } = req.body;
+
+    const { data, sha, path } = await obtenerArchivo('usuarios', 0);
+
+    const hash = await bcrypt.hash(contraseña, 10);
+
+    data.push({
+      nombre,
+      correoElectronico,
+      contraseña: hash,
+      rol
+    });
+
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    const body = {
+      message: `Nuevo usuario`,
+      content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
+      sha
+    };
+
+    const response = await axios.put(url, body, {
+      headers: {
+        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json'
+      }
+    });
+
+    cacheData['usuarios_0'] = data;
+    cacheSHA['usuarios_0'] = response.data.content.sha;
+
+    res.json({ mensaje: 'Usuario creado correctamente' });
+
+  } catch (error) {
+    console.error(error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data || error.message });
+  }
+});
 
 // ============================
 // GET (DICCIONARIO / CORPUS)
@@ -95,13 +236,16 @@ app.get('/:tipo', async (req, res) => {
     const { tipo } = req.params;
     const { variante, agrupacion } = req.query;
 
-    if (!agrupacion) {
+    if (tipo !== 'usuarios' && !agrupacion) {
       return res.status(400).json({ error: 'Debe enviar agrupacion' });
     }
-    const { data } = await obtenerArchivo(tipo, agrupacion);
+
+    const { data } = await obtenerArchivo(tipo, agrupacion || 0);
+
     let resultado = data;
 
     if (variante) {
+
       const campoFiltro =
         tipo === 'diccionario'
           ? 'idDiccionario'
@@ -115,165 +259,12 @@ app.get('/:tipo', async (req, res) => {
         );
       }
     }
+
     res.json(resultado);
+
   } catch (error) {
     console.error(error.message);
     res.status(500).json({ error: error.message });
-  }
-});
-
-// ============================
-// POST
-// ============================
-
-app.post('/:tipo', async (req, res) => {
-  try {
-
-    const { tipo } = req.params;
-    const { agrupacion } = req.query;
-
-    if (!agrupacion) {
-      return res.status(400).json({ error: 'Debe enviar agrupacion' });
-    }
-
-    const nuevo = req.body;
-
-    const { data, sha, path } = await obtenerArchivo(tipo, agrupacion);
-
-    data.push(nuevo);
-
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-
-    const body = {
-      message: `Nuevo registro en ${tipo}`,
-      content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
-      sha
-    };
-
-    const response = await axios.put(url, body, {
-      headers: {
-        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json'
-      }
-    });
-
-    const key = `${tipo}_${agrupacion}`;
-    cacheData[key] = data;
-    cacheSHA[key] = response.data.content.sha;
-
-    res.json(response.data);
-
-  } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data || error.message });
-  }
-});
-
-// ============================
-// PUT
-// ============================
-
-app.put('/:tipo/:id', async (req, res) => {
-
-  try {
-
-    const { tipo, id } = req.params;
-    const { agrupacion } = req.query;
-
-    if (!agrupacion) {
-      return res.status(400).json({ error: 'Debe enviar agrupacion' });
-    }
-
-    const actualizado = req.body;
-    const { data, sha, path } = await obtenerArchivo(tipo, agrupacion);
-    const campoId = tipo === 'corpus' ? 'idExpresion' : 'idPalabra';
-    const index = data.findIndex(d => d[campoId] == id);
-
-    if (index === -1) {
-      return res.status(404).json({ error: 'Registro no encontrado' });
-    }
-
-    data[index] = actualizado;
-
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-
-    const body = {
-      message: `Actualización en ${tipo}`,
-      content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
-      sha
-    };
-
-    const response = await axios.put(url, body, {
-      headers: {
-        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json'
-      }
-    });
-
-    const key = `${tipo}_${agrupacion}`;
-    cacheData[key] = data;
-    cacheSHA[key] = response.data.content.sha;
-
-    res.json(response.data);
-
-  } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data || error.message });
-  }
-});
-
-// ============================
-// DELETE
-// ============================
-
-app.delete('/:tipo/:id', async (req, res) => {
-  try {
-    const { tipo, id } = req.params;
-    const { agrupacion } = req.query;
-
-    if (!agrupacion) {
-      return res.status(400).json({ error: 'Debe enviar agrupacion' });
-    }
-
-    const { data, sha, path } = await obtenerArchivo(tipo, agrupacion);
-
-    // 🔥 Elegir campo según tipo
-    const campoId = tipo === 'diccionario'
-      ? 'idPalabra'
-      : 'idExpresion';
-
-    const nuevosDatos = data.filter(d =>
-      String(d[campoId]) !== String(id)
-    );
-
-    if (nuevosDatos.length === data.length) {
-      return res.status(404).json({ error: 'Registro no encontrado' });
-    }
-
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-
-    const body = {
-      message: `Eliminación en ${tipo}`,
-      content: Buffer.from(JSON.stringify(nuevosDatos, null, 2)).toString('base64'),
-      sha
-    };
-
-    const response = await axios.put(url, body, {
-      headers: {
-        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github.v3+json'
-      }
-    });
-
-    const key = `${tipo}_${agrupacion}`;
-    cacheData[key] = nuevosDatos;
-    cacheSHA[key] = response.data.content.sha;
-
-    res.json(response.data);
-
-  } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data || error.message });
   }
 });
 
@@ -285,5 +276,6 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Servidor activo en puerto ${PORT}`);
-  console.log("Token cargado:", process.env.GITHUB_TOKEN ? "Sí" : "No");
+  console.log("Token GitHub:", process.env.GITHUB_TOKEN ? "Sí" : "No");
+  console.log("JWT Secret:", process.env.JWT_SECRET ? "Sí" : "No");
 });
