@@ -183,10 +183,6 @@ app.post('/login', async (req, res) => {
 app.post('/usuarios', verificarToken, async (req, res) => {
   try {
 
-    if (req.usuario.rol !== 'admin') {
-      return res.status(403).json({ error: 'Solo admin puede crear usuarios' });
-    }
-
     const { nombre, correoElectronico, contraseña, rol } = req.body;
 
     const { data, sha, path } = await obtenerArchivo('usuarios', 0);
