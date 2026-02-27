@@ -180,7 +180,7 @@ app.post('/login', async (req, res) => {
 // CREAR USUARIO (Admin)
 // ============================
 
-app.post('/usuarios', verificarToken, async (req, res) => {
+app.post('/usuarios', async (req, res) => {
   try {
 
     const { nombre, correoElectronico, contraseña, rol } = req.body;
