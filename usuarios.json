@@ -1,12 +1,20 @@
 [
-  { "nombre": "José Francisco Delgado Orta",
+  {
+    "nombre": "José Francisco Delgado Orta",
     "contraseña": "deof8207",
     "correoElectronico": "fdelgado@aulavirtual.umar.mx",
     "rol": "admin"
   },
-  { "nombre": "Linguista 1",
+  {
+    "nombre": "Linguista 1",
     "contraseña": "1234",
     "correoElectronico": "francisco.delgado.orta@gmail.com",
+    "rol": "linguista"
+  },
+  {
+    "nombre": "aaaa",
+    "correoElectronico": "bbbb",
+    "contraseña": "$2a$10$JPnlwhN/FdRDLOuR9O3jjesR8ZCCuQMRw.ox1Fo8law0.gZAbew0a",
     "rol": "linguista"
   }
 ]
