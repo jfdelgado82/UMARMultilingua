@@ -348,26 +348,36 @@ app.get('/:tipo', async (req, res) => {
   try {
 
     const { tipo } = req.params;
-    const { agrupacion, variante } = req.query;
+    const { variante, agrupacion } = req.query;
 
-    if (!agrupacion)
+    if (tipo !== 'usuarios' && !agrupacion) {
       return res.status(400).json({ error: 'Debe enviar agrupacion' });
+    }
 
-    const { data } = await obtenerArchivo(tipo, agrupacion);
+    const { data } = await obtenerArchivo(tipo, agrupacion || 0);
 
     let resultado = data;
 
-    // 🔥 Filtrar por variante si existe
     if (variante) {
-      resultado = data.filter(item =>
-        item.idVariante == variante
-      );
+
+      const campoFiltro =
+        tipo === 'diccionario'
+          ? 'idDiccionario'
+          : tipo === 'corpus'
+            ? 'idCorpus'
+            : null;
+
+      if (campoFiltro) {
+        resultado = data.filter(item =>
+          item[campoFiltro] == variante
+        );
+      }
     }
 
     res.json(resultado);
 
   } catch (error) {
-    console.error("ERROR GET:", error.message);
+    console.error(error.message);
     res.status(500).json({ error: error.message });
   }
 });
