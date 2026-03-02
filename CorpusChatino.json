@@ -13830,5 +13830,13 @@
     "estatus": null,
     "multimedia": null,
     "traduccion": "11111"
+  },
+  {
+    "idExpresion": "7177",
+    "idCorpus": 9,
+    "expresion": "frase de prueba 2222222",
+    "estatus": "2222",
+    "multimedia": "22222",
+    "traduccion": "222222"
   }
 ]
