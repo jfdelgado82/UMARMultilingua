@@ -34,5 +34,11 @@
     "correoElectronico": "yo@msn.com.mx",
     "contraseña": "$2a$10$2CvTgURY2gK1DA1B/dz4ruGV9ESZTwDah624EfyOEvcDrAuyctaLq",
     "rol": "usuario"
+  },
+  {
+    "nombre": "yo",
+    "correoElectronico": "yo",
+    "contraseña": "$2a$10$GsGIyJeJJozhBLwE1JQAce7bEHp8nH8ZZvuGuoBOmK.PQLSCuPgBK",
+    "rol": "linguista"
   }
 ]
