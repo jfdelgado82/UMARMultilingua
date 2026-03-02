@@ -32968,25 +32968,5 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
-  },
-  {
-    "idPalabra": 33069,
-    "idDiccionario": "8",
-    "nombrePalabra": "test word",
-    "lexema": "11111",
-    "gramema": "2222",
-    "estatus": "3333",
-    "categoriaGramatical": "4444",
-    "traduccion": "5555"
-  },
-  {
-    "idPalabra": 33070,
-    "idDiccionario": "8",
-    "nombrePalabra": "test word",
-    "lexema": "11111",
-    "gramema": "22222",
-    "estatus": "33333",
-    "categoriaGramatical": "44444",
-    "traduccion": "55555"
   }
 ]
