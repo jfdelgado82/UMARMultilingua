@@ -238,7 +238,10 @@ app.put('/:tipo/:id', async (req, res) => {
   try {
 
     const { tipo, id } = req.params;
-    const { agrupacion } = req.query;
+    const { variante, agrupacion } = req.query;
+
+    if (!agrupacion || !variante)
+      return res.status(400).json({ error: 'Debe enviar variante y agrupacion' });
 
     const { data, sha, path } = await obtenerArchivo(tipo, agrupacion, true);
 
@@ -247,7 +250,14 @@ app.put('/:tipo/:id', async (req, res) => {
       tipo === 'corpus' ? 'idCorpus' :
       null;
 
-    const index = data.findIndex(item => item[campoId] == id);
+    if (!campoId)
+      return res.status(400).json({ error: 'Tipo no válido' });
+
+    // 🔥 Buscar registro dentro de la variante correcta
+    const index = data.findIndex(item =>
+      item[campoId] == id &&
+      item.idVariante == variante
+    );
 
     if (index === -1)
       return res.status(404).json({ error: 'Registro no encontrado' });
@@ -257,7 +267,7 @@ app.put('/:tipo/:id', async (req, res) => {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
     const body = {
-      message: `Actualización en ${tipo}`,
+      message: `Actualización en ${tipo} ID ${id}`,
       content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
       sha
     };
@@ -275,6 +285,7 @@ app.put('/:tipo/:id', async (req, res) => {
     res.json({ mensaje: 'Registro actualizado correctamente' });
 
   } catch (error) {
+    console.error(error.response?.data || error.message);
     res.status(500).json({ error: error.response?.data || error.message });
   }
 });
