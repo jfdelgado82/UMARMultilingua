@@ -16,5 +16,11 @@
     "correoElectronico": "mundo",
     "contraseña": "$2a$10$zcf0wnaBo6OySZzk9Odq3Oly5l2CS8GpU06hM87dvSHacy/3Oq6UW",
     "rol": "linguista"
+  },
+  {
+    "nombre": "usuario",
+    "correoElectronico": "user@yahoo.mx",
+    "contraseña": "$2a$10$nFG1Qf/Au91MlaSQ./uzfOMkhX94gHGa08AxkqNLcFu7PfKGjxZha",
+    "rol": "usuario"
   }
 ]
