@@ -22,5 +22,11 @@
     "correoElectronico": "user@yahoo.mx",
     "contraseña": "$2a$10$nFG1Qf/Au91MlaSQ./uzfOMkhX94gHGa08AxkqNLcFu7PfKGjxZha",
     "rol": "usuario"
+  },
+  {
+    "nombre": "fdelgado",
+    "correoElectronico": "fdelgado@aulavirtual.umar.mx",
+    "contraseña": "$2a$10$S9N8G6skPyLey0N/y4tiruFn3pVUEc2TzxB70JqLCc4L9Xfq/vrqi",
+    "rol": "linguista"
   }
 ]
