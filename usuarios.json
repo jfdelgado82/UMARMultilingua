@@ -28,5 +28,11 @@
     "correoElectronico": "fdelgado@aulavirtual.umar.mx",
     "contraseña": "$2a$10$S9N8G6skPyLey0N/y4tiruFn3pVUEc2TzxB70JqLCc4L9Xfq/vrqi",
     "rol": "linguista"
+  },
+  {
+    "nombre": "jfdelgado82",
+    "correoElectronico": "yo@msn.com.mx",
+    "contraseña": "$2a$10$2CvTgURY2gK1DA1B/dz4ruGV9ESZTwDah624EfyOEvcDrAuyctaLq",
+    "rol": "usuario"
   }
 ]
