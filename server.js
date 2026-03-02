@@ -340,17 +340,34 @@ app.delete('/:tipo/:id', async (req, res) => {
 // GET
 // ============================
 
+// ============================
+// GET CON FILTRO POR VARIANTE
+// ============================
+
 app.get('/:tipo', async (req, res) => {
   try {
 
     const { tipo } = req.params;
-    const { agrupacion } = req.query;
+    const { agrupacion, variante } = req.query;
+
+    if (!agrupacion)
+      return res.status(400).json({ error: 'Debe enviar agrupacion' });
 
     const { data } = await obtenerArchivo(tipo, agrupacion);
 
-    res.json(data);
+    let resultado = data;
+
+    // 🔥 Filtrar por variante si existe
+    if (variante) {
+      resultado = data.filter(item =>
+        item.idVariante == variante
+      );
+    }
+
+    res.json(resultado);
 
   } catch (error) {
+    console.error("ERROR GET:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
