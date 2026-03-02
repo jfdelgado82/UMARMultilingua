@@ -246,9 +246,10 @@ app.put('/:tipo/:id', async (req, res) => {
     const { data, sha, path } = await obtenerArchivo(tipo, agrupacion, true);
 
     const campoId =
-      tipo === 'diccionario' ? 'idDiccionario' :
-      tipo === 'corpus' ? 'idCorpus' :
+      tipo === 'diccionario' ? 'idPalabra' :
+      tipo === 'corpus' ? 'idExpresion' :
       null;
+    
 
     if (!campoId)
       return res.status(400).json({ error: 'Tipo no válido' });
