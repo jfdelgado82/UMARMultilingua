@@ -32978,5 +32978,15 @@
     "estatus": "oiooi",
     "categoriaGramatical": "yuyyyy",
     "traduccion": "esta es una prueba "
+  },
+  {
+    "idPalabra": "33069",
+    "idDiccionario": 9,
+    "nombrePalabra": "test 1",
+    "lexema": "aaaa",
+    "gramema": "bbbb",
+    "estatus": "ccccc",
+    "categoriaGramatical": "ddddd",
+    "traduccion": "eeeee"
   }
 ]
