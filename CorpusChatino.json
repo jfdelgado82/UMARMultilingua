@@ -13838,5 +13838,13 @@
     "estatus": "2222",
     "multimedia": "3333",
     "traduccion": "4444"
+  },
+  {
+    "idExpresion": 7178,
+    "idCorpus": "8",
+    "expresion": "ejemplo",
+    "estatus": "ejemplo",
+    "multimedia": "ejemplo",
+    "traduccion": "ejemplo"
   }
 ]
