@@ -16,5 +16,11 @@
     "correoElectronico": "tu",
     "contraseña": "$2a$10$uLoOYyRt/MKYbMj3egKn7.b2j7ECyxZFl8.Vi5ZZ2V8m1cTSm0rUa",
     "rol": "usuario"
+  },
+  {
+    "nombre": "el",
+    "correoElectronico": "el",
+    "contraseña": "$2a$10$FfUA0r3Zj3xdFziL/gdzfukgIJVmSQpZmzW83ihd45yYszl6wdEBO",
+    "rol": "linguista"
   }
 ]
