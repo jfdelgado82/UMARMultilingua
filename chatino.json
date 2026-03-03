@@ -32968,5 +32968,15 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
+  },
+  {
+    "idPalabra": 33069,
+    "idDiccionario": "8",
+    "nombrePalabra": "word1",
+    "lexema": "word1",
+    "gramema": "word1",
+    "estatus": "word1",
+    "categoriaGramatical": "word1",
+    "traduccion": "word1"
   }
 ]
