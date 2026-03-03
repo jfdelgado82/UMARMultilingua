@@ -246,7 +246,10 @@ app.put('/:tipo/:id', async (req, res) => {
   try {
 
     const { tipo, id } = req.params;
-    const { agrupacion } = req.query;
+    const { variante, agrupacion } = req.query;
+
+    if (!agrupacion || !variante)
+      return res.status(400).json({ error: 'Debe enviar variante y agrupacion' });
 
     const { data, sha, path } = await obtenerArchivo(tipo, agrupacion, true);
 
@@ -258,11 +261,12 @@ app.put('/:tipo/:id', async (req, res) => {
     if (!campoId)
       return res.status(400).json({ error: 'Tipo no válido' });
 
+    // 🔥 CORREGIDO AQUÍ
     const index = data.findIndex(item =>
       item[campoId] == id &&
       item.idDiccionario == variante
     );
-    
+
     if (index === -1)
       return res.status(404).json({ error: 'Registro no encontrado' });
 
@@ -289,10 +293,10 @@ app.put('/:tipo/:id', async (req, res) => {
     res.json({ mensaje: 'Registro actualizado correctamente' });
 
   } catch (error) {
+    console.error("ERROR REAL:", error.response?.data || error.message);
     res.status(500).json({ error: error.response?.data || error.message });
   }
 });
-
 // ELIMINAR REGISTRO
 app.delete('/:tipo/:id', async (req, res) => {
   try {
