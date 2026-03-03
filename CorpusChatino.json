@@ -13830,29 +13830,5 @@
     "estatus": null,
     "multimedia": null,
     "traduccion": "11111"
-  },
-  {
-    "idExpresion": "7177",
-    "idCorpus": 9,
-    "expresion": "frase de prueba 2222222",
-    "estatus": "2222",
-    "multimedia": "22222",
-    "traduccion": "222222"
-  },
-  {
-    "idExpresion": "7178",
-    "idCorpus": "8",
-    "expresion": "frase de ejemplo",
-    "estatus": "frase de ejemplo",
-    "multimedia": "frase de ejemplo",
-    "traduccion": "frase de ejemplo"
-  },
-  {
-    "idExpresion": 7179,
-    "idCorpus": "8",
-    "expresion": "frase de ejemplo",
-    "estatus": "frase de ejemplo",
-    "multimedia": "frase de ejemplo",
-    "traduccion": "frase de ejemplo"
   }
 ]
