@@ -259,9 +259,10 @@ app.put('/:tipo/:id', async (req, res) => {
       return res.status(400).json({ error: 'Tipo no válido' });
 
     const index = data.findIndex(item =>
-      item[campoId] == id
+      item[campoId] == id &&
+      item.idDiccionario == variante
     );
-
+    
     if (index === -1)
       return res.status(404).json({ error: 'Registro no encontrado' });
 
