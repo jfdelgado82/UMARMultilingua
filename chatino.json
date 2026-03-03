@@ -32977,6 +32977,16 @@
     "gramema": "word1",
     "estatus": "word1",
     "categoriaGramatical": "word1",
-    "traduccion": "word 999999999"
+    "traduccion": "word 66666666666"
+  },
+  {
+    "idPalabra": 33070,
+    "idDiccionario": "8",
+    "nombrePalabra": "bbbbbb",
+    "lexema": "bbbbbb",
+    "gramema": "bbbbbb",
+    "estatus": "bbbbb",
+    "categoriaGramatical": "bbbbb",
+    "traduccion": "bbbbbb"
   }
 ]
