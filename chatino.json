@@ -32978,5 +32978,15 @@
     "estatus": "word1",
     "categoriaGramatical": "word1",
     "traduccion": "word 66666666666"
+  },
+  {
+    "idPalabra": 33070,
+    "idDiccionario": "8",
+    "nombrePalabra": "aaaaaaa",
+    "lexema": "aaaaaaa",
+    "gramema": "aaaaaaa",
+    "estatus": "aaaaaaa",
+    "categoriaGramatical": "aaaaaaa",
+    "traduccion": "aaaaaaa"
   }
 ]
