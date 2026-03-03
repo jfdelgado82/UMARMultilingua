@@ -32968,5 +32968,15 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
+  },
+  {
+    "idPalabra": 33069,
+    "idDiccionario": "8",
+    "nombrePalabra": "vocablo",
+    "lexema": "vocablo",
+    "gramema": "vocablo",
+    "estatus": "vocablo",
+    "categoriaGramatical": "vocablo",
+    "traduccion": "vocablo"
   }
 ]
