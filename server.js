@@ -211,7 +211,7 @@ app.post('/:tipo', async (req, res) => {
 
     const nuevoRegistro = {
       ...req.body,
-      [campoId]: nuevoId
+      [campoId]: String(nuevoId)
     };
 
     data.push(nuevoRegistro);
