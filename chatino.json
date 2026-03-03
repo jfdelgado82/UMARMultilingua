@@ -32968,35 +32968,5 @@
     "estatus": null,
     "categoriaGramatical": "16577",
     "traduccion": "aconsejar"
-  },
-  {
-    "idPalabra": 33069,
-    "idDiccionario": "8",
-    "nombrePalabra": "word1",
-    "lexema": "word1",
-    "gramema": "word1",
-    "estatus": "word1",
-    "categoriaGramatical": "word1",
-    "traduccion": "word 66666666666"
-  },
-  {
-    "idPalabra": 33070,
-    "idDiccionario": "8",
-    "nombrePalabra": "bbbbbb",
-    "lexema": "bbbbbb",
-    "gramema": "bbbbbb",
-    "estatus": "bbbbb",
-    "categoriaGramatical": "bbbbb",
-    "traduccion": "bbbbbb"
-  },
-  {
-    "idPalabra": "33071",
-    "idDiccionario": "8",
-    "nombrePalabra": "xxxxxx",
-    "lexema": "xxxxxx",
-    "gramema": "xxxxxx",
-    "estatus": "xxxxxx",
-    "categoriaGramatical": "xxxxxx",
-    "traduccion": "xxxxxx"
   }
 ]
