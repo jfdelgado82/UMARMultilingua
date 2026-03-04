@@ -1,5 +1,11 @@
 [
   {
+    "nombre": "José Francisco Delgado Orta",
+    "contraseña": "deof8207",
+    "correoElectronico": "fdelgado@aulavirtual.umar.mx",
+    "rol": "admin"
+  },
+  {
     "nombre": "yo",
     "correoElectronico": "yo",
     "contraseña": "$2a$10$GsGIyJeJJozhBLwE1JQAce7bEHp8nH8ZZvuGuoBOmK.PQLSCuPgBK",
@@ -16,5 +22,11 @@
     "correoElectronico": "el",
     "contraseña": "$2a$10$FfUA0r3Zj3xdFziL/gdzfukgIJVmSQpZmzW83ihd45yYszl6wdEBO",
     "rol": "linguista"
+  },
+  {
+    "nombre": "me",
+    "correoElectronico": "me",
+    "contraseña": "$2a$10$u.nmvLjMMRdphgUJleCgze0xS2ZvB4UzQZv5xhWOBvdS0r.vdu0Lu",
+    "rol": "admin"
   }
 ]
