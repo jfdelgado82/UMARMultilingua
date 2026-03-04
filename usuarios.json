@@ -1,11 +1,5 @@
 [
   {
-    "nombre": "José Francisco Delgado Orta",
-    "contraseña": "deof8207",
-    "correoElectronico": "fdelgado@aulavirtual.umar.mx",
-    "rol": "admin"
-  },
-  {
     "nombre": "yo",
     "correoElectronico": "yo",
     "contraseña": "$2a$10$GsGIyJeJJozhBLwE1JQAce7bEHp8nH8ZZvuGuoBOmK.PQLSCuPgBK",
