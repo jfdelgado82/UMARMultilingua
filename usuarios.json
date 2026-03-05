@@ -3,8 +3,8 @@
     "nombre": "yo",
     "correoElectronico": "yo",
     "contraseña": "$2a$10$GsGIyJeJJozhBLwE1JQAce7bEHp8nH8ZZvuGuoBOmK.PQLSCuPgBK",
-    "rol": "linguista",
-    "activo": false
+    "rol": "usuario",
+    "activo": true
   },
   {
     "nombre": "tu",
