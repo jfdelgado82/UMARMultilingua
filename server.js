@@ -156,7 +156,8 @@ app.post('/usuarios', async (req, res) => {
       nombre,
       correoElectronico,
       contraseña: hash,
-      rol: rol || 'usuario'
+      rol: rol || 'usuario',
+      activo: false
     });
 
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
