@@ -185,6 +185,94 @@ app.post('/usuarios', async (req, res) => {
 });
 
 // ============================
+// ACTUALIZAR USUARIO
+// ============================
+
+app.put('/usuarios/:correo', async (req, res) => {
+  try {
+
+    const { correo } = req.params;
+    const { data, sha, path } = await obtenerArchivo('usuarios', 0, true);
+
+    const index = data.findIndex(
+      u => u.correoElectronico === correo
+    );
+
+    if (index === -1)
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    // actualizar datos
+    data[index] = {
+      ...data[index],
+      ...req.body
+    };
+
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    const body = {
+      message: `Actualización usuario ${correo}`,
+      content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
+      sha
+    };
+
+    const response = await axios.put(url, body, {
+      headers: {
+        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json'
+      }
+    });
+
+    cacheData['usuarios_0'] = data;
+    cacheSHA['usuarios_0'] = response.data.content.sha;
+
+    res.json({ mensaje: 'Usuario actualizado correctamente' });
+
+  } catch (error) {
+    res.status(500).json({ error: error.response?.data || error.message });
+  }
+});
+
+// ============================
+// ELIMINAR USUARIO
+// ============================
+
+app.delete('/usuarios/:correo', async (req, res) => {
+  try {
+
+    const { correo } = req.params;
+
+    const { data, sha, path } = await obtenerArchivo('usuarios', 0, true);
+
+    const nuevoArray = data.filter(
+      u => u.correoElectronico !== correo
+    );
+
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    const body = {
+      message: `Eliminar usuario ${correo}`,
+      content: Buffer.from(JSON.stringify(nuevoArray, null, 2)).toString('base64'),
+      sha
+    };
+
+    const response = await axios.put(url, body, {
+      headers: {
+        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json'
+      }
+    });
+
+    cacheData['usuarios_0'] = nuevoArray;
+    cacheSHA['usuarios_0'] = response.data.content.sha;
+
+    res.json({ mensaje: 'Usuario eliminado correctamente' });
+
+  } catch (error) {
+    res.status(500).json({ error: error.response?.data || error.message });
+  }
+});
+
+// ============================
 // CRUD DICCIONARIO Y CORPUS
 // ============================
 
