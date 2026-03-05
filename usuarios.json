@@ -24,6 +24,7 @@
     "nombre": "me",
     "correoElectronico": "me",
     "contraseña": "$2a$10$u.nmvLjMMRdphgUJleCgze0xS2ZvB4UzQZv5xhWOBvdS0r.vdu0Lu",
-    "rol": "admin"
+    "rol": "admin",
+    "activo":true
   }
 ]
