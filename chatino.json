@@ -32978,5 +32978,15 @@
     "estatus": "xxxx",
     "categoriaGramatical": "xxxx",
     "traduccion": "55555555"
+  },
+  {
+    "idPalabra": "33070",
+    "idDiccionario": "6",
+    "nombrePalabra": "gato",
+    "lexema": "gato",
+    "gramema": "ito",
+    "estatus": "Enviado",
+    "categoriaGramatical": "nombre",
+    "traduccion": "mstru"
   }
 ]
