@@ -4,7 +4,14 @@
     "correoElectronico": "yo",
     "contraseña": "$2a$10$GsGIyJeJJozhBLwE1JQAce7bEHp8nH8ZZvuGuoBOmK.PQLSCuPgBK",
     "rol": "usuario",
-    "activo": false
+    "activo": true
+  },
+  {
+    "nombre": "el",
+    "correoElectronico": "el",
+    "contraseña": "$2a$10$FfUA0r3Zj3xdFziL/gdzfukgIJVmSQpZmzW83ihd45yYszl6wdEBO",
+    "rol": "linguista",
+    "activo": true
   },
   {
     "nombre": "usuario ",
