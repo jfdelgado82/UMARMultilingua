@@ -21,10 +21,10 @@
     "activo": true
   },
   {
-    "nombre": "me",
+    "nombre": "usuario ",
     "correoElectronico": "me",
     "contraseña": "$2a$10$u.nmvLjMMRdphgUJleCgze0xS2ZvB4UzQZv5xhWOBvdS0r.vdu0Lu",
-    "rol": "admin",
+    "rol": "linguista",
     "activo": true
   },
   {
@@ -34,12 +34,5 @@
     "rol": "admin",
     "activo": true,
     "contrasena": "jfdo0782"
-  },
-  {
-    "nombre": "Jorge Ochoa Somuano",
-    "correoElectronico": "jsomuano@gmail.com",
-    "contraseña": "$2a$10$MjL0N74VsHu.hKl.u5zC7.CWIgXNLaykdX1AFpM8cEqe8w7TBdRoK",
-    "rol": "linguista",
-    "activo": false
   }
 ]
