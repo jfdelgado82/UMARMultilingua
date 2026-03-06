@@ -34,5 +34,12 @@
     "rol": "admin",
     "activo": true,
     "contrasena": "jfdo0782"
+  },
+  {
+    "nombre": "Jorge Ochoa Somuano ",
+    "correoElectronico": "jsomuano@gmail.com",
+    "contraseña": "$2a$10$8p1EKVPSxhLiIJbhPN0VQube3JcIPs08WD4bmfhj70v9.XWHfJF9K",
+    "rol": "linguista",
+    "activo": false
   }
 ]
