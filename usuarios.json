@@ -32,8 +32,7 @@
     "correoElectronico": "fdelgado@aulavirtual.umar.mx",
     "contraseña": "$2a$10$7Cx2B4aCEa3iRd3vvsRq6OGmM8SneWNcQ4vXbs8vsy0kXrq3pFfjy",
     "rol": "admin",
-    "activo": true,
-    "contrasena": "jfdo0782"
+    "activo": true
   },
   {
     "nombre": "Jorge Ochoa Somuano",
