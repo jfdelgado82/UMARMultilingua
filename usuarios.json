@@ -40,5 +40,12 @@
     "contraseña": "$2a$10$eSINigo4s2Xge80eWbHPMeAeB2hW0WlBCC.s1lRd2hE3sGqZdCCbO",
     "rol": "linguista",
     "activo": false
+  },
+  {
+    "nombre": "Omar Cruz",
+    "correoElectronico": "omar.cruz@aulavirtual.umar.mx",
+    "contraseña": "$2a$10$zG3drkHQsu61KGiscM80qehcrQjh4fzpOjP5opptB8gQZip0ckKTe",
+    "rol": "linguista",
+    "activo": false
   }
 ]
