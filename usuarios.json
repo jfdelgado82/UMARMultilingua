@@ -4,7 +4,7 @@
     "correoElectronico": "yo",
     "contraseña": "$2a$10$GsGIyJeJJozhBLwE1JQAce7bEHp8nH8ZZvuGuoBOmK.PQLSCuPgBK",
     "rol": "usuario",
-    "activo": false
+    "activo": true
   },
   {
     "nombre": "tu",
@@ -26,5 +26,12 @@
     "contraseña": "$2a$10$u.nmvLjMMRdphgUJleCgze0xS2ZvB4UzQZv5xhWOBvdS0r.vdu0Lu",
     "rol": "admin",
     "activo": true
+  },
+  {
+    "nombre": "Jose Francisco",
+    "correoElectronico": "fdelgado@aulavirtual.umar.mx",
+    "contraseña": "$2a$10$7Cx2B4aCEa3iRd3vvsRq6OGmM8SneWNcQ4vXbs8vsy0kXrq3pFfjy",
+    "rol": "usuario",
+    "activo": false
   }
 ]
