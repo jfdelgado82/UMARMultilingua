@@ -7,13 +7,6 @@
     "activo": false
   },
   {
-    "nombre": "el",
-    "correoElectronico": "el",
-    "contraseña": "$2a$10$FfUA0r3Zj3xdFziL/gdzfukgIJVmSQpZmzW83ihd45yYszl6wdEBO",
-    "rol": "linguista",
-    "activo": true
-  },
-  {
     "nombre": "usuario ",
     "correoElectronico": "me",
     "contraseña": "$2a$10$u.nmvLjMMRdphgUJleCgze0xS2ZvB4UzQZv5xhWOBvdS0r.vdu0Lu",
