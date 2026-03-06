@@ -1,12 +1,5 @@
 [
   {
-    "nombre": "yo",
-    "correoElectronico": "yo",
-    "contraseña": "$2a$10$GsGIyJeJJozhBLwE1JQAce7bEHp8nH8ZZvuGuoBOmK.PQLSCuPgBK",
-    "rol": "usuario",
-    "activo": false
-  },
-  {
     "nombre": "tu",
     "correoElectronico": "tu",
     "contraseña": "$2a$10$uLoOYyRt/MKYbMj3egKn7.b2j7ECyxZFl8.Vi5ZZ2V8m1cTSm0rUa",
