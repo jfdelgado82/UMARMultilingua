@@ -123,7 +123,8 @@ app.post('/login', async (req, res) => {
       usuario: {
         nombre: usuario.nombre,
         correoElectronico: usuario.correoElectronico,
-        rol: usuario.rol
+        rol: usuario.rol,
+        activo: usuario.activo
       }
     });
 
