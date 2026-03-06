@@ -4,7 +4,7 @@
     "correoElectronico": "yo",
     "contraseña": "$2a$10$GsGIyJeJJozhBLwE1JQAce7bEHp8nH8ZZvuGuoBOmK.PQLSCuPgBK",
     "rol": "usuario",
-    "activo": true
+    "activo": false
   },
   {
     "nombre": "el",
