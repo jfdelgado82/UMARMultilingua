@@ -445,43 +445,116 @@ app.delete('/:tipo/:id', async (req, res) => {
 // ============================
 
 // ============================
-// GET CON FILTRO POR VARIANTE
+// GET CON FILTRO POR VARIANTE (old)
+// ============================
+
+// ============================
+// GET CON BÚSQUEDA Y PAGINACIÓN (new)
 // ============================
 
 app.get('/:tipo', async (req, res) => {
   try {
-
     const { tipo } = req.params;
-    const { variante, agrupacion } = req.query;
+    const {
+      variante,
+      agrupacion,
+      pagina,
+      limite,
+      q
+    } = req.query;
+
+    if (!['diccionario', 'corpus', 'usuarios'].includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo no válido' });
+    }
 
     if (tipo !== 'usuarios' && !agrupacion) {
-      return res.status(400).json({ error: 'Debe enviar agrupacion' });
+      return res.status(400).json({
+        error: 'Debe enviar agrupacion'
+      });
     }
 
     const { data } = await obtenerArchivo(tipo, agrupacion || 0);
 
-    let resultado = data;
+    let resultado = Array.isArray(data) ? data : [];
 
+    // Filtrar por variante lingüística
     if (variante) {
-
       const campoFiltro =
-        tipo === 'diccionario'
-          ? 'idDiccionario'
-          : tipo === 'corpus'
-            ? 'idCorpus'
-            : null;
+        tipo === 'diccionario' ? 'idDiccionario' :
+        tipo === 'corpus' ? 'idCorpus' :
+        null;
 
       if (campoFiltro) {
-        resultado = data.filter(item =>
-          item[campoFiltro] == variante
+        resultado = resultado.filter(item =>
+          String(item[campoFiltro]) === String(variante)
         );
       }
     }
 
-    res.json(resultado);
+    // Búsqueda en servidor
+    const busqueda = String(q || '')
+      .trim()
+      .toLocaleLowerCase();
+
+    if (busqueda) {
+      const normalizar = valor =>
+        String(valor || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLocaleLowerCase();
+
+      resultado = resultado.filter(item => {
+        const campos = tipo === 'diccionario'
+          ? [
+              item.nombrePalabra,
+              item.traduccion,
+              item.lexema,
+              item.gramema,
+              item.categoriaGramatical
+            ]
+          : Object.values(item);
+
+        return campos.some(valor =>
+          normalizar(valor).includes(normalizar(busqueda))
+        );
+      });
+    }
+
+    // Mantener compatibilidad con consultas anteriores:
+    // sin parámetros de paginación se devuelve un arreglo.
+    const solicitaPaginacion =
+      pagina !== undefined ||
+      limite !== undefined ||
+      q !== undefined;
+
+    if (!solicitaPaginacion) {
+      return res.json(resultado);
+    }
+
+    const paginaActual = Math.max(1, parseInt(pagina, 10) || 1);
+    const limiteSolicitado = parseInt(limite, 10) || 100;
+    const limiteRegistros = Math.min(
+      100,
+      Math.max(1, limiteSolicitado)
+    );
+
+    const total = resultado.length;
+    const inicio = (paginaActual - 1) * limiteRegistros;
+    const datos = resultado.slice(
+      inicio,
+      inicio + limiteRegistros
+    );
+
+    return res.json({
+      datos,
+      pagina: paginaActual,
+      limite: limiteRegistros,
+      total,
+      hayMas: inicio + datos.length < total
+    });
 
   } catch (error) {
-    console.error(error.message);
+    console.error('Error al consultar registros:', error);
     res.status(500).json({ error: error.message });
   }
 });
