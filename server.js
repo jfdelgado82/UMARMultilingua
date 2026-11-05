@@ -11,7 +11,7 @@ require('dotenv').config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 
 // ============================
 // CONFIGURACIÓN
@@ -19,6 +19,7 @@ app.use(express.json());
 
 const owner = 'jfdelgado82';
 const repo = 'UMARMultilingua';
+const branch = process.env.GITHUB_BRANCH || 'main';
 
 const rutas = {
   diccionario: {
@@ -281,10 +282,178 @@ app.delete('/usuarios/:correo', async (req, res) => {
   }
 });
 
+
+// ==========================================
+// GUARDAR AUDIO DEL DICCIONARIO EN GITHUB
+// ==========================================
+
+app.post('/diccionario/:id/audio', async (req, res) => {
+  try {
+
+    const { id } = req.params;
+    const { variante, agrupacion } = req.query;
+    const { audioBase64, mimeType } = req.body;
+
+    // Validaciones
+    if (!id || !variante || !agrupacion) {
+      return res.status(400).json({
+        error: 'Faltan datos del vocablo'
+      });
+    }
+
+    if (!audioBase64) {
+      return res.status(400).json({
+        error: 'No se recibió ningún audio'
+      });
+    }
+
+    if (!process.env.GITHUB_TOKEN) {
+      throw new Error('Falta configurar GITHUB_TOKEN');
+    }
+
+    // Determinar carpeta lingüística
+    const agrupaciones = {
+      1: 'zapoteco',
+      2: 'chatino'
+    };
+
+    const nombreAgrupacion = agrupaciones[Number(agrupacion)];
+
+    if (!nombreAgrupacion) {
+      return res.status(400).json({
+        error: 'Agrupación no válida'
+      });
+    }
+
+    // Determinar extensión del archivo
+    const extensiones = {
+      'audio/webm': 'webm',
+      'audio/mp4': 'm4a',
+      'audio/ogg': 'ogg',
+      'audio/mpeg': 'mp3',
+      'audio/wav': 'wav'
+    };
+
+    const tipoAudio = String(mimeType || 'audio/webm')
+      .split(';')[0]
+      .toLowerCase();
+
+    const extension = extensiones[tipoAudio];
+
+    if (!extension) {
+      return res.status(400).json({
+        error: 'Formato de audio no compatible'
+      });
+    }
+
+    // Limpiar Base64
+    const base64Limpio = audioBase64.replace(
+      /^data:audio\/[^;]+;base64,/,
+      ''
+    );
+
+    const buffer = Buffer.from(base64Limpio, 'base64');
+
+    if (!buffer.length) {
+      return res.status(400).json({
+        error: 'El archivo de audio está vacío'
+      });
+    }
+
+    // Ruta del audio en GitHub
+    const audioPath =
+      `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
+
+    const githubUrl =
+      `https://api.github.com/repos/${owner}/${repo}/contents/${audioPath}`;
+
+    const headers = {
+      Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+      Accept: 'application/vnd.github+json'
+    };
+
+    // Comprobar si ya existe un audio para este vocablo
+    let shaAudio = undefined;
+
+    try {
+      const existente = await axios.get(githubUrl, { headers });
+      shaAudio = existente.data.sha;
+    } catch (error) {
+      if (error.response?.status !== 404) {
+        throw error;
+      }
+    }
+
+    // Subir audio a GitHub
+    await axios.put(githubUrl, {
+      message: `Guardar audio del vocablo ${id}`,
+      content: buffer.toString('base64'),
+      branch,
+      ...(shaAudio ? { sha: shaAudio } : {})
+    }, { headers });
+
+    // Dirección pública del archivo
+    const audioUrl =
+      `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${audioPath}`;
+
+    // Actualizar el JSON del diccionario
+    const { data, sha, path } =
+      await obtenerArchivo('diccionario', agrupacion, true);
+
+    const index = data.findIndex(item =>
+      String(item.idPalabra) === String(id) &&
+      String(item.idDiccionario) === String(variante)
+    );
+
+    if (index === -1) {
+      return res.status(404).json({
+        error: 'Audio subido, pero no se encontró el vocablo en el diccionario',
+        audioUrl
+      });
+    }
+
+    data[index].audioUrl = audioUrl;
+
+    const jsonUrl =
+      `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    const respuestaJSON = await axios.put(jsonUrl, {
+      message: `Actualizar audio del vocablo ${id}`,
+      content: Buffer.from(
+        JSON.stringify(data, null, 2)
+      ).toString('base64'),
+      sha,
+      branch
+    }, { headers });
+
+    // Actualizar caché
+    const cacheKey = `diccionario_${agrupacion}`;
+
+    cacheData[cacheKey] = data;
+    cacheSHA[cacheKey] = respuestaJSON.data.content.sha;
+
+    res.json({
+      mensaje: 'Audio guardado correctamente',
+      audioUrl
+    });
+
+  } catch (error) {
+
+    console.error(
+      'ERROR AL GUARDAR AUDIO:',
+      error.response?.data || error.message
+    );
+
+    res.status(500).json({
+      error: 'No fue posible guardar el audio',
+      detalle: error.response?.data || error.message
+    });
+
+  }
+});
 // ============================
 // CRUD DICCIONARIO Y CORPUS
 // ============================
-
 // CREAR REGISTRO
 app.post('/:tipo', async (req, res) => {
   try {
