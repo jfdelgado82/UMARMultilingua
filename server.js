@@ -109,13 +109,20 @@ app.post('/login', async (req, res) => {
     if (!passwordValido)
       return res.status(401).json({ error: 'Contraseña incorrecta' });
 
-    const JWT_SECRET = process.env.JWT_SECRET || 'clave_temporal_123';
-    console.log("JWT_SECRET:", process.env.JWT_SECRET);
-    const token = jwt.sign(
-      { correoElectronico: usuario.correoElectronico, rol: usuario.rol },
-      process.env.JWT_SECRET,
-      { expiresIn: '8h' }
-    );
+    const JWT_SECRET = process.env.JWT_SECRET;
+
+    if (!JWT_SECRET) {
+      throw new Error('Falta configurar JWT_SECRET en Render');
+    }
+
+      const token = jwt.sign(
+      {
+        correoElectronico: usuario.correoElectronico,
+        rol: usuario.rol
+      },
+      JWT_SECRET,
+        { expiresIn: '8h' }
+  );
 
     res.json({
       mensaje: 'Login exitoso',
