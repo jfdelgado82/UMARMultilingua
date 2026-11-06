@@ -7,7 +7,8 @@
     "gramema": null,
     "estatus": null,
     "categoriaGramatical": "16475",
-    "traduccion": "basto,basta"
+    "traduccion": "basto,basta",
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29771/audio?variante=6&agrupacion=2&formato=webm"
   },
   {
     "idPalabra": "29772",
@@ -18,7 +19,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "ese, esa, esos, esas, aquel, aquella, aquellos, aquellas aquello, aqullos, aqullas",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29772/audio?variante=6&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29772/audio?variante=6&agrupacion=2"
   },
   {
     "idPalabra": "29773",
@@ -39,7 +40,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "nueve",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29774/audio?variante=6&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29774/audio?variante=6&agrupacion=2"
   },
   {
     "idPalabra": "29775",
@@ -49,8 +50,7 @@
     "gramema": null,
     "estatus": null,
     "categoriaGramatical": "16475",
-    "traduccion": "bajo, baja",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29775/audio?variante=6&agrupacion=2&formato=webm"
+    "traduccion": "bajo, baja"
   },
   {
     "idPalabra": "29776",
@@ -71,7 +71,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "veinte",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29777/audio?variante=6&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29777/audio?variante=6&agrupacion=2"
   },
   {
     "idPalabra": "29778",
@@ -82,7 +82,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "treinta",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29778/audio?variante=6&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29778/audio?variante=6&agrupacion=2"
   },
   {
     "idPalabra": "29779",
@@ -153,7 +153,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "malo, pcaro",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29785/audio?variante=6&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/29785/audio?variante=6&agrupacion=2"
   },
   {
     "idPalabra": "29786",
@@ -6184,7 +6184,7 @@
     "estatus": null,
     "categoriaGramatical": "16542",
     "traduccion": "el perro",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/30388/audio?variante=6&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/30388/audio?variante=6&agrupacion=2"
   },
   {
     "idPalabra": "30389",
@@ -15204,8 +15204,7 @@
     "gramema": null,
     "estatus": null,
     "categoriaGramatical": "16475",
-    "traduccion": "enfermo",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/31291/audio?variante=7&agrupacion=2&formato=webm"
+    "traduccion": "enfermo"
   },
   {
     "idPalabra": "31292",
@@ -15245,8 +15244,7 @@
     "gramema": null,
     "estatus": null,
     "categoriaGramatical": "16475",
-    "traduccion": "horrible, feo",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/31295/audio?variante=7&agrupacion=2&formato=webm"
+    "traduccion": "horrible, feo"
   },
   {
     "idPalabra": "31296",
@@ -23027,7 +23025,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "izquierdo",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32073/audio?variante=8&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32073/audio?variante=8&agrupacion=2"
   },
   {
     "idPalabra": "32074",
@@ -23038,7 +23036,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "[Clase de persona] femenino ",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32074/audio?variante=8&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32074/audio?variante=8&agrupacion=2"
   },
   {
     "idPalabra": "32075",
@@ -23049,7 +23047,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "nivelado",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32075/audio?variante=8&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32075/audio?variante=8&agrupacion=2"
   },
   {
     "idPalabra": "32076",
@@ -23060,7 +23058,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "lujoso",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32076/audio?variante=8&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32076/audio?variante=8&agrupacion=2"
   },
   {
     "idPalabra": "32077",
@@ -23071,7 +23069,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "[Rasgos fsicos] vivo",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32077/audio?variante=8&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32077/audio?variante=8&agrupacion=2"
   },
   {
     "idPalabra": "32078",
@@ -23082,7 +23080,7 @@
     "estatus": null,
     "categoriaGramatical": "16475",
     "traduccion": "[Tamao-forma] apretado",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32078/audio?variante=8&agrupacion=2&formato=webm"
+    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32078/audio?variante=8&agrupacion=2"
   },
   {
     "idPalabra": "32079",
@@ -23092,8 +23090,7 @@
     "gramema": null,
     "estatus": null,
     "categoriaGramatical": "16475",
-    "traduccion": "[Clase de persona] Chatino",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32079/audio?variante=8&agrupacion=2&formato=webm"
+    "traduccion": "[Clase de persona] Chatino"
   },
   {
     "idPalabra": "32080",
@@ -23103,8 +23100,7 @@
     "gramema": null,
     "estatus": null,
     "categoriaGramatical": "16475",
-    "traduccion": "[Valor] cierto",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/32080/audio?variante=8&agrupacion=2&formato=webm"
+    "traduccion": "[Valor] cierto"
   },
   {
     "idPalabra": "32081",
