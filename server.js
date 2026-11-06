@@ -1155,15 +1155,34 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       sha: respuestaAudio.data.content.sha
     });
 
-    // 6. Construir la URL que utilizará Ionic.
-
+    // 6. Obtener el SHA del commit que contiene el nuevo audio.
+    // Este SHA permite identificar una versión específica e inmutable.
+    
+    etapa = 'obtener versión del audio';
+    
+    const versionAudio = respuestaAudio.data.commit?.sha;
+    
+    if (
+      !versionAudio ||
+      !/^[a-f0-9]{40}$/i.test(versionAudio)
+    ) {
+      throw new Error(
+        'GitHub no devolvió un SHA de commit válido para el audio'
+      );
+    }
+    
+    console.log('VERSIÓN DEL AUDIO:', versionAudio);
+    
+    // 7. Construir una URL única para esta versión del audio.
+    
     const audioUrl =
       `https://umarmultilingua.onrender.com/diccionario/${encodeURIComponent(id)}/audio` +
       `?variante=${encodeURIComponent(variante)}` +
       `&agrupacion=${encodeURIComponent(agrupacion)}` +
-      `&formato=${encodeURIComponent(extension)}`;
+      `&formato=${encodeURIComponent(extension)}` +
+      `&version=${encodeURIComponent(versionAudio)}`;
 
-    // 7. Asignar la URL al registro.
+    // 8. Asignar la URL al registro.
 
     etapa = 'asignación de audioUrl';
 
@@ -1175,7 +1194,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       audioUrl: data[index].audioUrl
     });
 
-    // 8. Guardar el JSON actualizado en GitHub.
+    // 9. Guardar el JSON actualizado en GitHub.
 
     etapa = 'actualización del JSON en GitHub';
 
@@ -1192,7 +1211,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       commit: respuestaJSON.commit?.sha
     });
 
-    // 9. Leer nuevamente el JSON desde GitHub.
+    // 10. Leer nuevamente el JSON desde GitHub.
     // Se obtiene contenido y SHA de la misma versión.
     // Ya no se utiliza download_url.
 
@@ -1227,7 +1246,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       sha: verificacion.sha
     });
 
-    // 10. La lectura forzada ya actualizó la caché.
+    // 11. La lectura forzada ya actualizó la caché.
     // Se conserva explícitamente la versión verificada.
 
     const cacheKey = `diccionario_${agrupacion}`;
@@ -1281,6 +1300,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
   }
 });
 
+
 // ==========================================
 // REPRODUCIR AUDIO DEL DICCIONARIO
 // ==========================================
@@ -1294,7 +1314,8 @@ app.get('/diccionario/:id/audio', async (req, res) => {
     const {
       variante,
       agrupacion,
-      formato
+      formato,
+      version
     } = req.query;
 
     const agrupaciones = {
@@ -1313,6 +1334,24 @@ app.get('/diccionario/:id/audio', async (req, res) => {
 
     if (!process.env.GITHUB_TOKEN) {
       throw new Error('Falta configurar GITHUB_TOKEN');
+    }
+
+    // Validar el SHA de versión, si fue proporcionado.
+
+    let referenciaGitHub = branch;
+
+    if (version !== undefined) {
+
+      if (
+        typeof version !== 'string' ||
+        !/^[a-f0-9]{40}$/i.test(version)
+      ) {
+        return res.status(400).json({
+          error: 'La versión del audio no es válida'
+        });
+      }
+
+      referenciaGitHub = version;
     }
 
     const extensionesDisponibles = [
@@ -1355,13 +1394,15 @@ app.get('/diccionario/:id/audio', async (req, res) => {
     let archivoEncontrado = null;
     let extensionEncontrada = null;
 
+    // Buscar el audio en la versión exacta de GitHub.
+
     for (const extension of extensiones) {
 
       const audioPath =
         `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
 
       const githubUrl =
-        `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(branch)}/${audioPath
+        `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(referenciaGitHub)}/${audioPath
           .split('/')
           .map(segment => encodeURIComponent(segment))
           .join('/')}`;
@@ -1370,6 +1411,10 @@ app.get('/diccionario/:id/audio', async (req, res) => {
 
         const respuesta = await axios.get(githubUrl, {
           responseType: 'arraybuffer',
+          headers: {
+            'Cache-Control': 'no-cache',
+            Pragma: 'no-cache'
+          },
           validateStatus: status => status === 200
         });
 
@@ -1392,18 +1437,29 @@ app.get('/diccionario/:id/audio', async (req, res) => {
 
     if (!archivoEncontrado) {
       return res.status(404).json({
-        error: 'No se encontró el archivo de audio'
+        error: 'No se encontró el archivo de audio',
+        version: referenciaGitHub
       });
     }
 
     const tamano = archivoEncontrado.length;
     const range = req.headers.range;
 
+    // Evitar que navegador, proxy o CDN reutilicen
+    // una versión anterior del audio.
+
     res.set({
       'Content-Type': tiposMime[extensionEncontrada],
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public, max-age=3600'
+      'Cache-Control':
+        'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Content-Type-Options': 'nosniff'
     });
+
+    // Soporte para reproducción parcial y avance
+    // dentro del reproductor de audio.
 
     if (range) {
 
@@ -1464,7 +1520,8 @@ app.get('/diccionario/:id/audio', async (req, res) => {
 
       res.set({
         'Content-Length': fragmento.length,
-        'Content-Range': `bytes ${inicio}-${fin}/${tamano}`
+        'Content-Range':
+          `bytes ${inicio}-${fin}/${tamano}`
       });
 
       return res.end(fragmento);
@@ -1483,11 +1540,15 @@ app.get('/diccionario/:id/audio', async (req, res) => {
       error.response?.data || error.message
     );
 
-    res.status(500).json({
-      error: 'No fue posible recuperar el audio'
+    return res.status(500).json({
+      error: 'No fue posible recuperar el audio',
+      detalle:
+        error.response?.data?.message ||
+        error.message
     });
   }
 });
+
 
 // ============================
 // CRUD DICCIONARIO Y CORPUS
