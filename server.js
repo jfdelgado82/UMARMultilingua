@@ -1,3 +1,4 @@
+
 // ============================
 // UMAR MULTILINGUA BACKEND
 // ============================
@@ -1326,7 +1327,9 @@ app.post('/:tipo', async (req, res) => {
   }
 });
 
+// ==========================================
 // ACTUALIZAR REGISTRO
+// ==========================================
 
 app.put('/:tipo/:id', async (req, res) => {
 
@@ -1356,8 +1359,8 @@ app.put('/:tipo/:id', async (req, res) => {
     }
 
     const index = data.findIndex(item =>
-      item[campoId] == id &&
-      item.idDiccionario == variante
+      String(item[campoId]) === String(id) &&
+      String(item.idDiccionario) === String(variante)
     );
 
     if (index === -1) {
@@ -1366,10 +1369,37 @@ app.put('/:tipo/:id', async (req, res) => {
       });
     }
 
+    // ==========================================
+    // PROTEGER LA URL DEL AUDIO
+    // ==========================================
+
+    // Conservar la URL del audio antes de actualizar.
+    const audioAnterior = data[index].audioUrl;
+
+    // Combinar los datos existentes con los recibidos.
     data[index] = {
       ...data[index],
       ...req.body
     };
+
+    // Evitar que una actualización normal borre un audio.
+    // Solo se aplica al diccionario.
+    if (
+      tipo === 'diccionario' &&
+      (
+        req.body.audioUrl === null ||
+        req.body.audioUrl === undefined ||
+        req.body.audioUrl === ''
+      ) &&
+      typeof audioAnterior === 'string' &&
+      audioAnterior.trim() !== ''
+    ) {
+      data[index].audioUrl = audioAnterior;
+    }
+
+    // ==========================================
+    // GUARDAR CAMBIOS EN GITHUB
+    // ==========================================
 
     const url =
       `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
@@ -1390,12 +1420,26 @@ app.put('/:tipo/:id', async (req, res) => {
       }
     });
 
+    // Actualizar caché con los datos guardados.
     cacheData[`${tipo}_${agrupacion}`] = data;
     cacheSHA[`${tipo}_${agrupacion}`] =
       response.data.content.sha;
 
+    console.log('REGISTRO ACTUALIZADO:', {
+      tipo,
+      id,
+      variante,
+      agrupacion,
+      audioUrl: tipo === 'diccionario'
+        ? data[index].audioUrl
+        : undefined
+    });
+
     res.json({
-      mensaje: 'Registro actualizado correctamente'
+      mensaje: 'Registro actualizado correctamente',
+      audioUrl: tipo === 'diccionario'
+        ? data[index].audioUrl || null
+        : undefined
     });
 
   } catch (error) {
@@ -1411,7 +1455,9 @@ app.put('/:tipo/:id', async (req, res) => {
   }
 });
 
+// ============================
 // ELIMINAR REGISTRO
+// ============================
 
 app.delete('/:tipo/:id', async (req, res) => {
 
