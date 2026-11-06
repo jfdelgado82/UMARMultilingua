@@ -1,4 +1,3 @@
-
 // ============================
 // UMAR MULTILINGUA BACKEND
 // ============================
@@ -15,15 +14,16 @@ require('dotenv').config();
 const app = express();
 
 app.use(cors());
+
+// A. Límite suficiente para recibir audio codificado en Base64.
 app.use(express.json({ limit: '15mb' }));
 
-// ============================
-// CONFIGURACIÓN
-// ============================
-
+// B. Rama configurable desde Render.
 const owner = 'jfdelgado82';
 const repo = 'UMARMultilingua';
 const branch = process.env.GITHUB_BRANCH || 'main';
+
+const BASE_URL = 'https://umarmultilingua.onrender.com';
 
 const rutas = {
   diccionario: {
@@ -39,16 +39,38 @@ const rutas = {
   }
 };
 
-// ============================
-// CACHE
-// ============================
-
 const cacheData = {};
 const cacheSHA = {};
 
-// ============================
-// UTILIDADES GITHUB
-// ============================
+const agrupaciones = {
+  1: 'zapoteco',
+  2: 'chatino'
+};
+
+const extensionesAudio = {
+  'audio/webm': 'webm',
+  'audio/mp4': 'm4a',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav'
+};
+
+const tiposMime = {
+  webm: 'audio/webm',
+  m4a: 'audio/mp4',
+  ogg: 'audio/ogg',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav'
+};
+
+// ==========================================
+// UTILIDADES GENERALES
+// ==========================================
+
+function esperar(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function githubHeaders() {
   return {
@@ -59,21 +81,32 @@ function githubHeaders() {
 }
 
 function githubContentsUrl(path) {
-  const encodedPath = path
+  const encoded = path
     .split('/')
     .map(segment => encodeURIComponent(segment))
     .join('/');
 
-  return `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}`;
+  return `https://api.github.com/repos/${owner}/${repo}/contents/${encoded}`;
 }
 
 function githubBlobUrl(sha) {
   return `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`;
 }
 
-// ============================
-// OBTENER CONTENIDO BASE64
-// ============================
+function esConflictoGitHub(error) {
+  const status = error.response?.status;
+  return status === 409 || status === 422;
+}
+
+function validarTokenGitHub() {
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('Falta configurar GITHUB_TOKEN');
+  }
+}
+
+// ==========================================
+// LEER CONTENIDO DE GITHUB
+// ==========================================
 
 async function obtenerContenidoGitHub(response, path) {
 
@@ -84,33 +117,21 @@ async function obtenerContenidoGitHub(response, path) {
     const sha = response.data.sha;
 
     if (!sha) {
-      throw new Error(
-        `GitHub no devolvió el SHA necesario para leer ${path}`
-      );
+      throw new Error(`GitHub no devolvió SHA para ${path}`);
     }
 
-    console.log(
-      'CONTENIDO NO DISPONIBLE EN CONTENTS API. CONSULTANDO GIT BLOBS:',
-      { path, sha }
-    );
-
-    const blobResponse = await axios.get(
-      githubBlobUrl(sha),
-      {
-        headers: githubHeaders()
-      }
-    );
+    const blob = await axios.get(githubBlobUrl(sha), {
+      headers: githubHeaders()
+    });
 
     if (
-      !blobResponse.data.content ||
-      blobResponse.data.encoding !== 'base64'
+      !blob.data.content ||
+      blob.data.encoding !== 'base64'
     ) {
-      throw new Error(
-        `GitHub no devolvió contenido Base64 para ${path}`
-      );
+      throw new Error(`No se pudo leer el contenido de ${path}`);
     }
 
-    contenidoBase64 = blobResponse.data.content;
+    contenidoBase64 = blob.data.content;
   }
 
   const contenido = Buffer.from(
@@ -121,26 +142,25 @@ async function obtenerContenidoGitHub(response, path) {
   try {
     return JSON.parse(contenido);
   } catch (error) {
-    throw new Error(
-      `No se pudo interpretar el JSON ${path}: ${error.message}`
-    );
+    throw new Error(`JSON inválido en ${path}: ${error.message}`);
   }
 }
 
-// ============================
-// OBTENER ARCHIVO DESDE GITHUB
-// ============================
+// ==========================================
+// OBTENER ARCHIVO
+// ==========================================
 
 async function obtenerArchivo(tipo, agrupacion, forzar = false) {
+
+  validarTokenGitHub();
 
   if (!rutas[tipo]) {
     throw new Error('Tipo no válido');
   }
 
-  const path =
-    tipo === 'usuarios'
-      ? rutas[tipo][0]
-      : rutas[tipo][Number(agrupacion)];
+  const path = tipo === 'usuarios'
+    ? rutas[tipo][0]
+    : rutas[tipo][Number(agrupacion)];
 
   if (!path) {
     throw new Error('Agrupación no válida');
@@ -156,95 +176,41 @@ async function obtenerArchivo(tipo, agrupacion, forzar = false) {
     };
   }
 
-  if (!process.env.GITHUB_TOKEN) {
-    throw new Error('Falta configurar GITHUB_TOKEN');
-  }
-
-  const url = githubContentsUrl(path);
-
-  const response = await axios.get(url, {
-    headers: {
-      ...githubHeaders(),
-      'Cache-Control': 'no-cache'
-    },
-    params: {
-      ref: branch
+  const response = await axios.get(
+    githubContentsUrl(path),
+    {
+      headers: githubHeaders(),
+      params: { ref: branch }
     }
-  });
+  );
 
+  const data = await obtenerContenidoGitHub(response, path);
   const sha = response.data.sha;
 
   if (!sha) {
-    throw new Error(
-      `GitHub no devolvió el SHA del archivo ${path}`
-    );
+    throw new Error(`GitHub no devolvió SHA para ${path}`);
   }
 
-  const contenido = await obtenerContenidoGitHub(
-    response,
-    path
-  );
-
-  if (
-    (
-      tipo === 'diccionario' ||
-      tipo === 'corpus' ||
-      tipo === 'usuarios'
-    ) &&
-    !Array.isArray(contenido)
-  ) {
-    throw new Error(
-      `El archivo ${path} no contiene un arreglo JSON válido`
-    );
+  if (!Array.isArray(data)) {
+    throw new Error(`${path} no contiene un arreglo JSON`);
   }
 
-  cacheData[key] = contenido;
+  cacheData[key] = data;
   cacheSHA[key] = sha;
 
-  console.log('ARCHIVO OBTENIDO DESDE GITHUB:', {
-    tipo,
-    agrupacion,
-    path,
-    sha,
-    registros: Array.isArray(contenido)
-      ? contenido.length
-      : undefined
-  });
-
-  return {
-    data: contenido,
-    sha,
-    path
-  };
+  return { data, sha, path };
 }
 
-// ============================
-// GUARDAR JSON EN GITHUB
-// ============================
+// ==========================================
+// GUARDAR ARCHIVO JSON EN GITHUB
+// ==========================================
 
 async function guardarArchivoGitHub(path, data, sha, mensaje) {
 
-  if (!sha) {
-    throw new Error(
-      `No se recibió SHA para actualizar ${path}`
-    );
-  }
-
-  if (!process.env.GITHUB_TOKEN) {
-    throw new Error('Falta configurar GITHUB_TOKEN');
-  }
-
-  const url = githubContentsUrl(path);
-
-  console.log('ACTUALIZANDO ARCHIVO EN GITHUB:', {
-    path,
-    sha,
-    branch,
-    registros: Array.isArray(data) ? data.length : undefined
-  });
+  validarTokenGitHub();
 
   const response = await axios.put(
-    url,
+    githubContentsUrl(path),
     {
       message: mensaje,
       content: Buffer.from(
@@ -260,30 +226,112 @@ async function guardarArchivoGitHub(path, data, sha, mensaje) {
   );
 
   if (!response.data.content?.sha) {
-    throw new Error(
-      `GitHub no confirmó la actualización de ${path}`
-    );
+    throw new Error(`GitHub no confirmó la actualización de ${path}`);
   }
-
-  console.log('ARCHIVO ACTUALIZADO EN GITHUB:', {
-    path,
-    nuevoSHA: response.data.content.sha,
-    commit: response.data.commit?.sha
-  });
 
   return response.data;
 }
 
-// ============================
-// CONVERTIR Y VALIDAR BASE64
-// ============================
+// ==========================================
+// A. ACTUALIZACIÓN SEGURA DEL DICCIONARIO
+// ==========================================
+
+// Cada intento lee la última versión del JSON.
+// Si otro usuario lo modificó, se vuelve a leer y se reintenta.
+// Así se conservan las actualizaciones de otros registros.
+
+async function actualizarAudioEnDiccionario({
+  agrupacion,
+  variante,
+  id,
+  audioUrl,
+  maxIntentos = 5
+}) {
+
+  const cacheKey = `diccionario_${agrupacion}`;
+
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+
+    try {
+
+      // No usar la caché: necesitamos la versión más reciente.
+      const resultado = await obtenerArchivo(
+        'diccionario',
+        agrupacion,
+        true
+      );
+
+      const { data, sha, path } = resultado;
+
+      const index = data.findIndex(item =>
+        String(item.idPalabra) === String(id) &&
+        String(item.idDiccionario) === String(variante)
+      );
+
+      if (index === -1) {
+        throw new Error(
+          `No se encontró el vocablo ${id} en la variante ${variante}`
+        );
+      }
+
+      // Modificar únicamente el registro solicitado.
+      data[index] = {
+        ...data[index],
+        audioUrl
+      };
+
+      const respuesta = await guardarArchivoGitHub(
+        path,
+        data,
+        sha,
+        `Actualizar audioUrl del vocablo ${id}`
+      );
+
+      cacheData[cacheKey] = data;
+      cacheSHA[cacheKey] = respuesta.content.sha;
+
+      console.log('JSON ACTUALIZADO:', {
+        id,
+        agrupacion,
+        variante,
+        intento,
+        sha: respuesta.content.sha
+      });
+
+      return {
+        path,
+        sha: respuesta.content.sha,
+        audioUrl
+      };
+
+    } catch (error) {
+
+      if (!esConflictoGitHub(error) || intento === maxIntentos) {
+        throw error;
+      }
+
+      console.warn(
+        `Conflicto al actualizar diccionario. Reintento ${intento}/${maxIntentos}`,
+        error.response?.data || error.message
+      );
+
+      await esperar(150 * intento + Math.floor(Math.random() * 100));
+    }
+  }
+
+  throw new Error(
+    'No fue posible actualizar el diccionario después de varios intentos'
+  );
+}
+
+// ==========================================
+// B. BASE64 Y VALIDACIÓN DE AUDIO
+// ==========================================
 
 function convertirBase64Audio(valor) {
 
   if (!valor || typeof valor !== 'string') {
-    throw new Error(
-      'No se recibió información Base64 del audio'
-    );
+    throw new Error('No se recibió el audio en Base64');
   }
 
   let base64 = valor.trim();
@@ -293,95 +341,50 @@ function convertirBase64Audio(valor) {
     const separador = base64.indexOf(',');
 
     if (separador === -1) {
-      throw new Error(
-        'El formato Data URL del audio es incorrecto'
-      );
-    }
-
-    const encabezado = base64.substring(0, separador);
-
-    if (!/;base64$/i.test(encabezado)) {
-      throw new Error(
-        'La Data URL no contiene información Base64'
-      );
+      throw new Error('Data URL inválida');
     }
 
     base64 = base64.substring(separador + 1);
   }
 
-  base64 = base64.replace(/\s/g, '');
-
   base64 = base64
+    .replace(/\s/g, '')
     .replace(/-/g, '+')
     .replace(/_/g, '/');
 
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
-    throw new Error(
-      'La información Base64 contiene caracteres no válidos'
-    );
+    throw new Error('Base64 inválido');
   }
 
   const sinPadding = base64.replace(/=+$/, '');
 
-  if (sinPadding.length === 0) {
-    throw new Error(
-      'La información Base64 está vacía'
-    );
-  }
-
-  if (sinPadding.length % 4 === 1) {
-    throw new Error(
-      'La longitud de la información Base64 es incorrecta'
-    );
-  }
-
-  const paddingOriginal =
-    base64.length - sinPadding.length;
-
   if (
-    paddingOriginal > 0 &&
-    base64.length % 4 !== 0
+    sinPadding.length === 0 ||
+    sinPadding.length % 4 === 1
   ) {
-    throw new Error(
-      'El padding de la información Base64 es incorrecto'
-    );
+    throw new Error('Longitud Base64 incorrecta');
   }
 
-  const base64Completo = sinPadding.padEnd(
+  const completo = sinPadding.padEnd(
     sinPadding.length +
       ((4 - sinPadding.length % 4) % 4),
     '='
   );
 
-  const buffer = Buffer.from(
-    base64Completo,
-    'base64'
-  );
+  const buffer = Buffer.from(completo, 'base64');
 
-  if (!buffer.length) {
-    throw new Error('El audio recibido está vacío');
-  }
-
-  const base64Canonico = buffer
-    .toString('base64')
-    .replace(/=+$/, '');
-
-  if (base64Canonico !== sinPadding) {
-    throw new Error(
-      'La información Base64 no pudo decodificarse correctamente'
-    );
+  if (
+    buffer.toString('base64').replace(/=+$/, '') !== sinPadding
+  ) {
+    throw new Error('No se pudo decodificar correctamente el audio');
   }
 
   return buffer;
 }
 
-// ============================
-// VALIDAR FIRMA DEL AUDIO
-// ============================
-
 function validarFirmaAudio(buffer, extension) {
 
-  const firmasValidas = {
+  const firmas = {
 
     webm:
       buffer.length >= 4 &&
@@ -413,19 +416,445 @@ function validarFirmaAudio(buffer, extension) {
       buffer.toString('ascii', 8, 12) === 'WAVE'
   };
 
-  return Boolean(firmasValidas[extension]);
+  return Boolean(firmas[extension]);
 }
 
-// ============================
+// ==========================================
+// C. SUBIR O REEMPLAZAR AUDIO CON REINTENTOS
+// ==========================================
+
+// Si dos usuarios reemplazan el mismo archivo,
+// el segundo vuelve a consultar el SHA y reintenta.
+
+async function subirAudioGitHub({
+  audioPath,
+  buffer,
+  id,
+  maxIntentos = 5
+}) {
+
+  validarTokenGitHub();
+
+  const url = githubContentsUrl(audioPath);
+
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+
+    try {
+
+      let shaAudio;
+
+      try {
+
+        const existente = await axios.get(url, {
+          headers: githubHeaders(),
+          params: { ref: branch }
+        });
+
+        shaAudio = existente.data.sha;
+
+      } catch (error) {
+
+        if (error.response?.status !== 404) {
+          throw error;
+        }
+      }
+
+      const respuesta = await axios.put(
+        url,
+        {
+          message: `Guardar audio del vocablo ${id}`,
+          content: buffer.toString('base64'),
+          branch,
+          ...(shaAudio ? { sha: shaAudio } : {})
+        },
+        {
+          headers: githubHeaders()
+        }
+      );
+
+      const versionAudio = respuesta.data.commit?.sha;
+
+      if (
+        !versionAudio ||
+        !/^[a-f0-9]{40}$/i.test(versionAudio)
+      ) {
+        throw new Error(
+          'GitHub no devolvió un SHA de commit válido para el audio'
+        );
+      }
+
+      return {
+        versionAudio,
+        shaAudio: respuesta.data.content?.sha
+      };
+
+    } catch (error) {
+
+      if (!esConflictoGitHub(error) || intento === maxIntentos) {
+        throw error;
+      }
+
+      console.warn(
+        `Conflicto al subir audio. Reintento ${intento}/${maxIntentos}`,
+        error.response?.data || error.message
+      );
+
+      await esperar(150 * intento + Math.floor(Math.random() * 100));
+    }
+  }
+
+  throw new Error(
+    'No fue posible guardar el audio después de varios intentos'
+  );
+}
+
+// ==========================================
+// GUARDAR AUDIO DEL DICCIONARIO
+// ==========================================
+
+app.post('/diccionario/:id/audio', async (req, res) => {
+
+  let etapa = 'inicio';
+
+  try {
+
+    const { id } = req.params;
+    const { variante, agrupacion } = req.query;
+    const { audioBase64, mimeType } = req.body;
+
+    if (!id || !variante || !agrupacion || !audioBase64) {
+      return res.status(400).json({
+        error: 'Faltan datos del audio o del vocablo'
+      });
+    }
+
+    const nombreAgrupacion =
+      agrupaciones[Number(agrupacion)];
+
+    if (!nombreAgrupacion) {
+      return res.status(400).json({
+        error: 'Agrupación no válida'
+      });
+    }
+
+    const tipoAudio = String(mimeType || 'audio/webm')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+
+    const extension = extensionesAudio[tipoAudio];
+
+    if (!extension) {
+      return res.status(400).json({
+        error: 'Formato de audio no compatible',
+        mimeType
+      });
+    }
+
+    etapa = 'validación del audio';
+
+    const buffer = convertirBase64Audio(audioBase64);
+
+    if (buffer.length < 256) {
+      return res.status(400).json({
+        error: 'El audio está vacío o incompleto'
+      });
+    }
+
+    if (buffer.length > 10 * 1024 * 1024) {
+      return res.status(413).json({
+        error: 'El audio supera el límite de 10 MB'
+      });
+    }
+
+    if (!validarFirmaAudio(buffer, extension)) {
+      return res.status(400).json({
+        error: 'El contenido no corresponde al formato declarado',
+        formato: tipoAudio
+      });
+    }
+
+    const audioPath =
+      `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
+
+    console.log('AUDIO RECIBIDO:', {
+      id,
+      variante,
+      agrupacion,
+      extension,
+      bytes: buffer.length
+    });
+
+    // 1. Subir el audio a GitHub.
+    etapa = 'subida del audio';
+
+    const resultadoAudio = await subirAudioGitHub({
+      audioPath,
+      buffer,
+      id
+    });
+
+    // 2. Crear URL inmutable con SHA de commit.
+    etapa = 'generación de audioUrl';
+
+    const audioUrl =
+      `${BASE_URL}/diccionario/${encodeURIComponent(id)}/audio` +
+      `?variante=${encodeURIComponent(variante)}` +
+      `&agrupacion=${encodeURIComponent(agrupacion)}` +
+      `&formato=${encodeURIComponent(extension)}` +
+      `&version=${encodeURIComponent(resultadoAudio.versionAudio)}`;
+
+    // 3. Actualizar JSON con control de conflictos.
+    etapa = 'actualización segura del diccionario';
+
+    const resultadoJSON = await actualizarAudioEnDiccionario({
+      agrupacion,
+      variante,
+      id,
+      audioUrl,
+      maxIntentos: 5
+    });
+
+    console.log('========== AUDIO GUARDADO ==========');
+
+    console.log({
+      id,
+      variante,
+      agrupacion,
+      bytes: buffer.length,
+      versionAudio: resultadoAudio.versionAudio,
+      archivoJSON: resultadoJSON.path
+    });
+
+    return res.json({
+      mensaje: 'Audio y audioUrl guardados correctamente',
+      audioUrl,
+      versionAudio: resultadoAudio.versionAudio,
+      archivoJSON: resultadoJSON.path,
+      bytes: buffer.length,
+      guardadoGitHub: true
+    });
+
+  } catch (error) {
+
+    console.error('ERROR AL GUARDAR AUDIO:', {
+      etapa,
+      mensaje: error.message,
+      status: error.response?.status,
+      github: error.response?.data
+    });
+
+    return res.status(
+      esConflictoGitHub(error) ? 409 : 500
+    ).json({
+      error: 'No fue posible completar el guardado del audio',
+      etapa,
+      detalle:
+        error.response?.data?.message ||
+        error.message,
+      codigoGitHub: error.response?.status || null
+    });
+  }
+});
+
+// ==========================================
+// REPRODUCIR AUDIO
+// ==========================================
+
+app.get('/diccionario/:id/audio', async (req, res) => {
+
+  try {
+
+    const { id } = req.params;
+
+    const {
+      variante,
+      agrupacion,
+      formato,
+      version
+    } = req.query;
+
+    const nombreAgrupacion =
+      agrupaciones[Number(agrupacion)];
+
+    if (!nombreAgrupacion || !variante || !id) {
+      return res.status(400).json({
+        error: 'Parámetros incompletos'
+      });
+    }
+
+    let referenciaGitHub = branch;
+
+    if (version !== undefined) {
+
+      if (
+        typeof version !== 'string' ||
+        !/^[a-f0-9]{40}$/i.test(version)
+      ) {
+        return res.status(400).json({
+          error: 'Versión del audio no válida'
+        });
+      }
+
+      referenciaGitHub = version;
+    }
+
+    const disponibles = ['webm', 'm4a', 'ogg', 'mp3', 'wav'];
+
+    const solicitado = String(formato || '').toLowerCase();
+
+    if (solicitado && !disponibles.includes(solicitado)) {
+      return res.status(400).json({
+        error: 'Formato no válido'
+      });
+    }
+
+    const extensiones = solicitado
+      ? [
+          solicitado,
+          ...disponibles.filter(e => e !== solicitado)
+        ]
+      : disponibles;
+
+    let audio = null;
+    let extensionEncontrada = null;
+
+    for (const extension of extensiones) {
+
+      const path =
+        `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
+
+      const url =
+        `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(referenciaGitHub)}/${path
+          .split('/')
+          .map(segment => encodeURIComponent(segment))
+          .join('/')}`;
+
+      try {
+
+        const respuesta = await axios.get(url, {
+          responseType: 'arraybuffer',
+          headers: {
+            'Cache-Control': 'no-cache'
+          },
+          validateStatus: status => status === 200
+        });
+
+        if (respuesta.data?.byteLength > 0) {
+          audio = Buffer.from(respuesta.data);
+          extensionEncontrada = extension;
+          break;
+        }
+
+      } catch (error) {
+
+        if (error.response?.status !== 404) {
+          throw error;
+        }
+      }
+    }
+
+    if (!audio) {
+      return res.status(404).json({
+        error: 'Audio no encontrado'
+      });
+    }
+
+    const tamano = audio.length;
+    const range = req.headers.range;
+
+    res.set({
+      'Content-Type': tiposMime[extensionEncontrada],
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Content-Type-Options': 'nosniff'
+    });
+
+    if (range) {
+
+      const coincidencia = /^bytes=(\d*)-(\d*)$/.exec(range);
+
+      if (!coincidencia) {
+        return res.status(416)
+          .set('Content-Range', `bytes */${tamano}`)
+          .end();
+      }
+
+      let inicio;
+      let fin;
+
+      if (coincidencia[1] === '') {
+
+        const cantidad = Number(coincidencia[2]);
+
+        if (!cantidad || cantidad <= 0) {
+          return res.status(416)
+            .set('Content-Range', `bytes */${tamano}`)
+            .end();
+        }
+
+        inicio = Math.max(0, tamano - cantidad);
+        fin = tamano - 1;
+
+      } else {
+
+        inicio = Number(coincidencia[1]);
+        fin = coincidencia[2]
+          ? Number(coincidencia[2])
+          : tamano - 1;
+      }
+
+      if (
+        !Number.isSafeInteger(inicio) ||
+        !Number.isSafeInteger(fin) ||
+        inicio < 0 ||
+        inicio >= tamano ||
+        fin < inicio
+      ) {
+        return res.status(416)
+          .set('Content-Range', `bytes */${tamano}`)
+          .end();
+      }
+
+      fin = Math.min(fin, tamano - 1);
+
+      const fragmento = audio.subarray(inicio, fin + 1);
+
+      res.status(206);
+
+      res.set({
+        'Content-Length': fragmento.length,
+        'Content-Range': `bytes ${inicio}-${fin}/${tamano}`
+      });
+
+      return res.end(fragmento);
+    }
+
+    res.set('Content-Length', tamano);
+
+    return res.status(200).end(audio);
+
+  } catch (error) {
+
+    console.error(
+      'ERROR AL REPRODUCIR AUDIO:',
+      error.response?.data || error.message
+    );
+
+    return res.status(500).json({
+      error: 'No fue posible recuperar el audio',
+      detalle: error.message
+    });
+  }
+});
+
+// ==========================================
 // RECUPERAR AUDIOS EXISTENTES
-// ============================
+// ==========================================
 
 async function recuperarAudiosExistentes(agrupacion) {
-
-  const agrupaciones = {
-    1: 'zapoteco',
-    2: 'chatino'
-  };
 
   const nombreAgrupacion =
     agrupaciones[Number(agrupacion)];
@@ -434,222 +863,125 @@ async function recuperarAudiosExistentes(agrupacion) {
     throw new Error('Agrupación no válida');
   }
 
-  if (!process.env.GITHUB_TOKEN) {
-    throw new Error('Falta configurar GITHUB_TOKEN');
-  }
-
   const { data, sha, path } =
     await obtenerArchivo('diccionario', agrupacion, true);
 
-  if (!Array.isArray(data)) {
-    throw new Error(
-      'El archivo del diccionario no contiene un arreglo válido'
-    );
-  }
-
-  const headers = githubHeaders();
-
-  const prioridadExtensiones = [
-    'webm',
-    'm4a',
-    'ogg',
-    'mp3',
-    'wav'
-  ];
-
   const variantes = [
     ...new Set(
-      data
-        .map(item =>
-          String(item.idDiccionario || '').trim()
-        )
+      data.map(item => String(item.idDiccionario || ''))
         .filter(Boolean)
     )
   ];
 
-  const archivosPorVariante = {};
+  const archivos = {};
 
   for (const variante of variantes) {
 
     const carpeta =
       `audios/${nombreAgrupacion}/${variante}`;
 
-    const githubUrl = githubContentsUrl(carpeta);
+    archivos[variante] = {};
 
     try {
 
-      const respuesta = await axios.get(githubUrl, {
-        headers,
-        params: {
-          ref: branch
+      const respuesta = await axios.get(
+        githubContentsUrl(carpeta),
+        {
+          headers: githubHeaders(),
+          params: { ref: branch }
         }
-      });
+      );
 
-      const archivos = respuesta.data;
-
-      archivosPorVariante[variante] = {};
-
-      if (!Array.isArray(archivos)) {
+      if (!Array.isArray(respuesta.data)) {
         continue;
       }
 
-      for (const archivo of archivos) {
+      for (const archivo of respuesta.data) {
 
-        if (archivo.type !== 'file') {
-          continue;
-        }
+        if (archivo.type !== 'file') continue;
 
-        const coincidencia = archivo.name.match(
+        const match = archivo.name.match(
           /^(\d+)\.(webm|m4a|ogg|mp3|wav)$/i
         );
 
-        if (!coincidencia) {
-          continue;
-        }
+        if (!match) continue;
 
-        const idPalabra = coincidencia[1];
-        const extension = coincidencia[2].toLowerCase();
+        const id = match[1];
+        const extension = match[2].toLowerCase();
 
-        const extensionActual =
-          archivosPorVariante[variante][idPalabra];
-
-        if (!extensionActual) {
-
-          archivosPorVariante[variante][idPalabra] =
-            extension;
-
-        } else {
-
-          const prioridadNueva =
-            prioridadExtensiones.indexOf(extension);
-
-          const prioridadActual =
-            prioridadExtensiones.indexOf(extensionActual);
-
-          if (prioridadNueva < prioridadActual) {
-            archivosPorVariante[variante][idPalabra] =
-              extension;
-          }
+        if (!archivos[variante][id]) {
+          archivos[variante][id] = extension;
         }
       }
 
     } catch (error) {
 
-      if (error.response?.status === 404) {
-
-        console.log(
-          'Carpeta de audios no encontrada:',
-          carpeta
-        );
-
-        archivosPorVariante[variante] = {};
-        continue;
+      if (error.response?.status !== 404) {
+        throw error;
       }
-
-      throw error;
     }
   }
 
   let recuperados = 0;
-  let yaRegistrados = 0;
-  let noEncontrados = 0;
 
   for (const item of data) {
 
-    const idPalabra = String(item.idPalabra);
     const variante = String(item.idDiccionario);
+    const id = String(item.idPalabra);
 
-    const extension =
-      archivosPorVariante[variante]?.[idPalabra];
+    const extension = archivos[variante]?.[id];
 
-    if (!extension) {
+    if (!extension) continue;
 
-      if (
-        typeof item.audioUrl === 'string' &&
-        item.audioUrl.trim() !== ''
-      ) {
-        yaRegistrados++;
-      } else {
-        noEncontrados++;
-      }
-
-      continue;
-    }
-
-    const audioUrl =
-      `https://umarmultilingua.onrender.com/diccionario/${encodeURIComponent(idPalabra)}/audio` +
+    item.audioUrl =
+      `${BASE_URL}/diccionario/${encodeURIComponent(id)}/audio` +
       `?variante=${encodeURIComponent(variante)}` +
       `&agrupacion=${encodeURIComponent(agrupacion)}` +
       `&formato=${encodeURIComponent(extension)}`;
 
-    if (item.audioUrl === audioUrl) {
-      yaRegistrados++;
-      continue;
-    }
-
-    item.audioUrl = audioUrl;
     recuperados++;
   }
 
   if (recuperados > 0) {
 
-    const respuestaJSON = await guardarArchivoGitHub(
+    const respuesta = await guardarArchivoGitHub(
       path,
       data,
       sha,
-      `Recuperar direcciones de audios de ${nombreAgrupacion}`
+      `Recuperar audios de ${nombreAgrupacion}`
     );
 
-    const cacheKey = `diccionario_${agrupacion}`;
-
-    cacheData[cacheKey] = data;
-    cacheSHA[cacheKey] = respuestaJSON.content.sha;
+    cacheData[`diccionario_${agrupacion}`] = data;
+    cacheSHA[`diccionario_${agrupacion}`] =
+      respuesta.content.sha;
   }
 
-  const resultado = {
+  return {
     agrupacion: nombreAgrupacion,
-    variantesRevisadas: variantes.length,
-    registrosRevisados: data.length,
-    recuperados,
-    yaRegistrados,
-    noEncontrados
+    registros: data.length,
+    recuperados
   };
-
-  console.log(
-    '========== RECUPERACIÓN DE AUDIOS =========='
-  );
-  console.log(resultado);
-
-  return resultado;
 }
-
-// ============================
-// RUTA PROTEGIDA PARA RECUPERAR AUDIOS
-// ============================
 
 app.post('/recuperar-audios/:agrupacion', async (req, res) => {
 
   try {
 
-    const claveConfigurada =
-      process.env.AUDIO_RECOVERY_SECRET;
+    const configurada = process.env.AUDIO_RECOVERY_SECRET;
+    const recibida = req.headers['x-recovery-secret'];
 
-    const claveRecibida =
-      req.headers['x-recovery-secret'];
-
-    if (!claveConfigurada) {
+    if (!configurada) {
       return res.status(500).json({
-        error: 'Falta configurar AUDIO_RECOVERY_SECRET en Render'
+        error: 'Falta configurar AUDIO_RECOVERY_SECRET'
       });
     }
 
     if (
-      typeof claveRecibida !== 'string' ||
-      Buffer.byteLength(claveRecibida) !==
-        Buffer.byteLength(claveConfigurada) ||
+      typeof recibida !== 'string' ||
+      Buffer.byteLength(recibida) !== Buffer.byteLength(configurada) ||
       !crypto.timingSafeEqual(
-        Buffer.from(claveRecibida),
-        Buffer.from(claveConfigurada)
+        Buffer.from(recibida),
+        Buffer.from(configurada)
       )
     ) {
       return res.status(401).json({
@@ -661,8 +993,7 @@ app.post('/recuperar-audios/:agrupacion', async (req, res) => {
 
     if (![1, 2].includes(agrupacion)) {
       return res.status(400).json({
-        error:
-          'La agrupación debe ser 1 (Zapoteco) o 2 (Chatino)'
+        error: 'Agrupación no válida'
       });
     }
 
@@ -670,37 +1001,29 @@ app.post('/recuperar-audios/:agrupacion', async (req, res) => {
       await recuperarAudiosExistentes(agrupacion);
 
     return res.json({
-      mensaje: 'Proceso de recuperación terminado',
+      mensaje: 'Recuperación completada',
       resultado
     });
 
   } catch (error) {
 
-    console.error(
-      'ERROR AL RECUPERAR AUDIOS:',
-      error.response?.data || error.message
-    );
+    console.error('ERROR RECUPERACIÓN:', error.message);
 
     return res.status(500).json({
-      error: 'No fue posible recuperar los audios',
-      detalle:
-        error.response?.data || error.message
+      error: error.message
     });
   }
 });
 
-// ============================
+// ==========================================
 // LOGIN
-// ============================
+// ==========================================
 
 app.post('/login', async (req, res) => {
 
   try {
 
-    const {
-      correoElectronico,
-      contraseña
-    } = req.body;
+    const { correoElectronico, contraseña } = req.body;
 
     if (!correoElectronico || !contraseña) {
       return res.status(400).json({
@@ -708,8 +1031,7 @@ app.post('/login', async (req, res) => {
       });
     }
 
-    const { data } =
-      await obtenerArchivo('usuarios', 0);
+    const { data } = await obtenerArchivo('usuarios', 0, true);
 
     const usuario = data.find(u =>
       u.correoElectronico === correoElectronico
@@ -721,23 +1043,19 @@ app.post('/login', async (req, res) => {
       });
     }
 
-    const passwordValido = await bcrypt.compare(
+    const valido = await bcrypt.compare(
       contraseña,
       usuario.contraseña
     );
 
-    if (!passwordValido) {
+    if (!valido) {
       return res.status(401).json({
         error: 'Contraseña incorrecta'
       });
     }
 
-    const JWT_SECRET = process.env.JWT_SECRET;
-
-    if (!JWT_SECRET) {
-      throw new Error(
-        'Falta configurar JWT_SECRET en Render'
-      );
+    if (!process.env.JWT_SECRET) {
+      throw new Error('Falta configurar JWT_SECRET');
     }
 
     const token = jwt.sign(
@@ -745,11 +1063,11 @@ app.post('/login', async (req, res) => {
         correoElectronico: usuario.correoElectronico,
         rol: usuario.rol
       },
-      JWT_SECRET,
+      process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
 
-    res.json({
+    return res.json({
       mensaje: 'Login exitoso',
       token,
       usuario: {
@@ -764,15 +1082,15 @@ app.post('/login', async (req, res) => {
 
     console.error('ERROR LOGIN:', error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: error.message
     });
   }
 });
 
-// ============================
+// ==========================================
 // REGISTRO DE USUARIOS
-// ============================
+// ==========================================
 
 app.post('/usuarios', async (req, res) => {
 
@@ -787,20 +1105,18 @@ app.post('/usuarios', async (req, res) => {
 
     if (!nombre || !correoElectronico || !contraseña) {
       return res.status(400).json({
-        error: 'Faltan datos para registrar al usuario'
+        error: 'Faltan datos'
       });
     }
 
     const { data, sha, path } =
       await obtenerArchivo('usuarios', 0, true);
 
-    const existe = data.find(u =>
+    if (data.some(u =>
       u.correoElectronico === correoElectronico
-    );
-
-    if (existe) {
-      return res.status(400).json({
-        error: 'Usuario ya existe'
+    )) {
+      return res.status(409).json({
+        error: 'El usuario ya existe'
       });
     }
 
@@ -814,36 +1130,33 @@ app.post('/usuarios', async (req, res) => {
       activo: false
     });
 
-    const response = await guardarArchivoGitHub(
+    const respuesta = await guardarArchivoGitHub(
       path,
       data,
       sha,
       'Nuevo usuario'
     );
 
-    cacheData['usuarios_0'] = data;
-    cacheSHA['usuarios_0'] = response.content.sha;
+    cacheData.usuarios_0 = data;
+    cacheSHA.usuarios_0 = respuesta.content.sha;
 
-    res.json({
+    return res.json({
       mensaje: 'Usuario creado correctamente'
     });
 
   } catch (error) {
 
-    console.error(
-      'ERROR REGISTRO:',
-      error.response?.data || error.message
-    );
+    console.error('ERROR REGISTRO:', error.message);
 
-    res.status(500).json({
-      error: error.response?.data || error.message
+    return res.status(500).json({
+      error: error.message
     });
   }
 });
 
-// ============================
+// ==========================================
 // ACTUALIZAR USUARIO
-// ============================
+// ==========================================
 
 app.put('/usuarios/:correo', async (req, res) => {
 
@@ -869,36 +1182,33 @@ app.put('/usuarios/:correo', async (req, res) => {
       ...req.body
     };
 
-    const response = await guardarArchivoGitHub(
+    const respuesta = await guardarArchivoGitHub(
       path,
       data,
       sha,
-      `Actualización usuario ${correo}`
+      `Actualizar usuario ${correo}`
     );
 
-    cacheData['usuarios_0'] = data;
-    cacheSHA['usuarios_0'] = response.content.sha;
+    cacheData.usuarios_0 = data;
+    cacheSHA.usuarios_0 = respuesta.content.sha;
 
-    res.json({
-      mensaje: 'Usuario actualizado correctamente'
+    return res.json({
+      mensaje: 'Usuario actualizado'
     });
 
   } catch (error) {
 
-    console.error(
-      'ERROR ACTUALIZAR USUARIO:',
-      error.response?.data || error.message
-    );
+    console.error('ERROR ACTUALIZAR USUARIO:', error.message);
 
-    res.status(500).json({
-      error: error.response?.data || error.message
+    return res.status(500).json({
+      error: error.message
     });
   }
 });
 
-// ============================
+// ==========================================
 // ELIMINAR USUARIO
-// ============================
+// ==========================================
 
 app.delete('/usuarios/:correo', async (req, res) => {
 
@@ -913,639 +1223,33 @@ app.delete('/usuarios/:correo', async (req, res) => {
       u => u.correoElectronico !== correo
     );
 
-    const response = await guardarArchivoGitHub(
+    const respuesta = await guardarArchivoGitHub(
       path,
       nuevoArray,
       sha,
       `Eliminar usuario ${correo}`
     );
 
-    cacheData['usuarios_0'] = nuevoArray;
-    cacheSHA['usuarios_0'] = response.content.sha;
-
-    res.json({
-      mensaje: 'Usuario eliminado correctamente'
-    });
-
-  } catch (error) {
-
-    console.error(
-      'ERROR ELIMINAR USUARIO:',
-      error.response?.data || error.message
-    );
-
-    res.status(500).json({
-      error: error.response?.data || error.message
-    });
-  }
-});
-
-// ==========================================
-// GUARDAR AUDIO DEL DICCIONARIO EN GITHUB
-// VERSIÓN OPTIMIZADA
-// ==========================================
-
-app.post('/diccionario/:id/audio', async (req, res) => {
-
-  let etapa = 'inicio';
-
-  try {
-
-    const { id } = req.params;
-    const { variante, agrupacion } = req.query;
-    const { audioBase64, mimeType } = req.body;
-
-    if (!id || !variante || !agrupacion || !audioBase64) {
-      return res.status(400).json({
-        error: 'Faltan datos del audio o del vocablo'
-      });
-    }
-
-    if (!process.env.GITHUB_TOKEN) {
-      throw new Error('Falta configurar GITHUB_TOKEN');
-    }
-
-    const agrupaciones = {
-      1: 'zapoteco',
-      2: 'chatino'
-    };
-
-    const nombreAgrupacion =
-      agrupaciones[Number(agrupacion)];
-
-    if (!nombreAgrupacion) {
-      return res.status(400).json({
-        error: 'Agrupación no válida'
-      });
-    }
-
-    // Validar formato.
-
-    const extensiones = {
-      'audio/webm': 'webm',
-      'audio/mp4': 'm4a',
-      'audio/ogg': 'ogg',
-      'audio/mpeg': 'mp3',
-      'audio/wav': 'wav',
-      'audio/x-wav': 'wav'
-    };
-
-    const tipoAudio = String(mimeType || 'audio/webm')
-      .split(';')[0]
-      .trim()
-      .toLowerCase();
-
-    const extension = extensiones[tipoAudio];
-
-    if (!extension) {
-      return res.status(400).json({
-        error: 'Formato de audio no compatible',
-        mimeType
-      });
-    }
-
-    // Validar Base64.
-
-    etapa = 'validación del audio';
-
-    let buffer;
-
-    try {
-
-      buffer = convertirBase64Audio(audioBase64);
-
-    } catch (errorBase64) {
-
-      console.error('ERROR VALIDANDO BASE64:', {
-        mensaje: errorBase64.message,
-        tipoDato: typeof audioBase64,
-        longitud: typeof audioBase64 === 'string'
-          ? audioBase64.length
-          : null
-      });
-
-      return res.status(400).json({
-        error: errorBase64.message
-      });
-    }
-
-    if (buffer.length < 256) {
-      return res.status(400).json({
-        error: 'El audio recibido está vacío o incompleto',
-        bytesRecibidos: buffer.length
-      });
-    }
-
-    if (buffer.length > 10 * 1024 * 1024) {
-      return res.status(413).json({
-        error: 'El audio supera el límite de 10 MB'
-      });
-    }
-
-    if (!validarFirmaAudio(buffer, extension)) {
-      return res.status(400).json({
-        error: 'El contenido no corresponde al formato declarado',
-        formato: tipoAudio,
-        primerosBytes: buffer.subarray(0, 12).toString('hex')
-      });
-    }
-
-    console.log('========== AUDIO RECIBIDO ==========');
-
-    console.log({
-      id,
-      variante,
-      agrupacion,
-      mimeType: tipoAudio,
-      extension,
-      bytes: buffer.length
-    });
-
-    // Preparar ruta del audio.
-
-    etapa = 'preparación de la ruta del audio';
-
-    const audioPath =
-      `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
-
-    const audioApiUrl = githubContentsUrl(audioPath);
-
-    // Consultar JSON y audio simultáneamente.
-
-    etapa = 'consulta simultánea del JSON y del audio';
-
-    const [resultadoJSON, resultadoAudioExistente] =
-      await Promise.all([
-
-        obtenerArchivo(
-          'diccionario',
-          agrupacion,
-          true
-        ),
-
-        axios.get(audioApiUrl, {
-          headers: githubHeaders(),
-          params: {
-            ref: branch
-          }
-        }).catch(error => {
-
-          if (error.response?.status === 404) {
-            return null;
-          }
-
-          throw error;
-        })
-
-      ]);
-
-    const {
-      data,
-      sha,
-      path
-    } = resultadoJSON;
-
-    if (!Array.isArray(data)) {
-      throw new Error(
-        'El JSON del diccionario no contiene un arreglo válido'
-      );
-    }
-
-    const shaAudio = resultadoAudioExistente
-      ? resultadoAudioExistente.data.sha
-      : undefined;
-
-    console.log('CONSULTAS COMPLETADAS:', {
-      archivoJSON: path,
-      shaJSON: sha,
-      audioExistente: Boolean(shaAudio),
-      shaAudio: shaAudio || null
-    });
-
-    // Localizar vocablo.
-
-    etapa = 'búsqueda del vocablo';
-
-    const index = data.findIndex(item =>
-      String(item.idPalabra) === String(id) &&
-      String(item.idDiccionario) === String(variante)
-    );
-
-    if (index === -1) {
-      return res.status(404).json({
-        error: 'No se encontró el vocablo en el diccionario',
-        idPalabra: id,
-        idDiccionario: variante,
-        agrupacion,
-        archivo: path
-      });
-    }
-
-    console.log('VOCABLO ENCONTRADO:', {
-      idPalabra: data[index].idPalabra,
-      idDiccionario: data[index].idDiccionario,
-      audioAnterior: data[index].audioUrl || null
-    });
-
-    // Subir o reemplazar audio.
-
-    etapa = 'subida del archivo de audio a GitHub';
-
-    const respuestaAudio = await axios.put(
-      audioApiUrl,
-      {
-        message: `Guardar audio del vocablo ${id}`,
-        content: buffer.toString('base64'),
-        branch,
-        ...(shaAudio ? { sha: shaAudio } : {})
-      },
-      {
-        headers: githubHeaders()
-      }
-    );
-
-    if (!respuestaAudio.data.content?.sha) {
-      throw new Error(
-        'GitHub no confirmó el almacenamiento del audio'
-      );
-    }
-
-    console.log('AUDIO GUARDADO EN GITHUB:', {
-      ruta: audioPath,
-      shaAudio: respuestaAudio.data.content.sha,
-      commit: respuestaAudio.data.commit?.sha
-    });
-
-    // Obtener SHA del commit del audio.
-
-    etapa = 'obtención de la versión del audio';
-
-    const versionAudio =
-      respuestaAudio.data.commit?.sha;
-
-    if (
-      !versionAudio ||
-      !/^[a-f0-9]{40}$/i.test(versionAudio)
-    ) {
-      throw new Error(
-        'GitHub no devolvió un SHA de commit válido para el audio'
-      );
-    }
-
-    // Construir URL versionada.
-
-    const audioUrl =
-      `https://umarmultilingua.onrender.com/diccionario/${encodeURIComponent(id)}/audio` +
-      `?variante=${encodeURIComponent(variante)}` +
-      `&agrupacion=${encodeURIComponent(agrupacion)}` +
-      `&formato=${encodeURIComponent(extension)}` +
-      `&version=${encodeURIComponent(versionAudio)}`;
-
-    // Actualizar registro.
-
-    etapa = 'asignación de audioUrl';
-
-    data[index].audioUrl = audioUrl;
-
-    console.log('NUEVA URL DEL AUDIO:', {
-      idPalabra: id,
-      idDiccionario: variante,
-      audioUrl,
-      versionAudio
-    });
-
-    // Guardar JSON.
-
-    etapa = 'actualización del JSON en GitHub';
-
-    const respuestaJSON = await guardarArchivoGitHub(
-      path,
-      data,
-      sha,
-      `Actualizar audioUrl del vocablo ${id}`
-    );
-
-    if (!respuestaJSON.content?.sha) {
-      throw new Error(
-        'GitHub no confirmó la actualización del JSON'
-      );
-    }
-
-    console.log('JSON ACTUALIZADO:', {
-      archivo: path,
-      sha: respuestaJSON.content.sha,
-      commit: respuestaJSON.commit?.sha
-    });
-
-    // Actualizar caché sin segunda consulta.
-
-    etapa = 'actualización de caché';
-
-    const cacheKey = `diccionario_${agrupacion}`;
-
-    cacheData[cacheKey] = data;
-    cacheSHA[cacheKey] = respuestaJSON.content.sha;
-
-    console.log('========== GUARDADO COMPLETADO ==========');
-
-    console.log({
-      idPalabra: id,
-      idDiccionario: variante,
-      agrupacion,
-      bytes: buffer.length,
-      versionAudio,
-      archivoJSON: path
-    });
+    cacheData.usuarios_0 = nuevoArray;
+    cacheSHA.usuarios_0 = respuesta.content.sha;
 
     return res.json({
-      mensaje: 'Audio y audioUrl guardados correctamente',
-      audioUrl,
-      archivoJSON: path,
-      idPalabra: id,
-      idDiccionario: variante,
-      bytes: buffer.length,
-      versionAudio,
-      verificado: true
+      mensaje: 'Usuario eliminado'
     });
 
   } catch (error) {
 
-    const estadoGitHub = error.response?.status || null;
-
-    const detalleGitHub =
-      error.response?.data || null;
-
-    console.error(
-      '========== ERROR AL GUARDAR AUDIO ==========',
-      {
-        etapa,
-        mensaje: error.message,
-        estadoGitHub,
-        detalleGitHub,
-        codigoGitHub: error.response?.data?.message,
-        erroresGitHub: error.response?.data?.errors
-      }
-    );
+    console.error('ERROR ELIMINAR USUARIO:', error.message);
 
     return res.status(500).json({
-      error: 'No fue posible guardar el audio y actualizar el JSON',
-      etapa,
-      detalle:
-        error.response?.data?.message ||
-        error.message,
-      codigoGitHub: estadoGitHub,
-      erroresGitHub:
-        error.response?.data?.errors || null,
-      respuestaGitHub: detalleGitHub
+      error: error.message
     });
   }
 });
 
 // ==========================================
-// REPRODUCIR AUDIO DEL DICCIONARIO
+// CREAR REGISTRO EN DICCIONARIO O CORPUS
 // ==========================================
-
-app.get('/diccionario/:id/audio', async (req, res) => {
-
-  try {
-
-    const { id } = req.params;
-
-    const {
-      variante,
-      agrupacion,
-      formato,
-      version
-    } = req.query;
-
-    const agrupaciones = {
-      1: 'zapoteco',
-      2: 'chatino'
-    };
-
-    const nombreAgrupacion =
-      agrupaciones[Number(agrupacion)];
-
-    if (!nombreAgrupacion || !variante || !id) {
-      return res.status(400).json({
-        error: 'Parámetros de audio incompletos'
-      });
-    }
-
-    if (!process.env.GITHUB_TOKEN) {
-      throw new Error('Falta configurar GITHUB_TOKEN');
-    }
-
-    // Validar versión del audio.
-
-    let referenciaGitHub = branch;
-
-    if (version !== undefined) {
-
-      if (
-        typeof version !== 'string' ||
-        !/^[a-f0-9]{40}$/i.test(version)
-      ) {
-        return res.status(400).json({
-          error: 'La versión del audio no es válida'
-        });
-      }
-
-      referenciaGitHub = version;
-    }
-
-    const extensionesDisponibles = [
-      'webm',
-      'm4a',
-      'ogg',
-      'mp3',
-      'wav'
-    ];
-
-    const formatoSolicitado =
-      String(formato || '').toLowerCase().trim();
-
-    if (
-      formatoSolicitado &&
-      !extensionesDisponibles.includes(formatoSolicitado)
-    ) {
-      return res.status(400).json({
-        error: 'Formato de audio no válido'
-      });
-    }
-
-    const extensiones = formatoSolicitado
-      ? [
-          formatoSolicitado,
-          ...extensionesDisponibles.filter(
-            extension => extension !== formatoSolicitado
-          )
-        ]
-      : extensionesDisponibles;
-
-    const tiposMime = {
-      webm: 'audio/webm',
-      m4a: 'audio/mp4',
-      ogg: 'audio/ogg',
-      mp3: 'audio/mpeg',
-      wav: 'audio/wav'
-    };
-
-    let archivoEncontrado = null;
-    let extensionEncontrada = null;
-
-    for (const extension of extensiones) {
-
-      const audioPath =
-        `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
-
-      const githubUrl =
-        `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(referenciaGitHub)}/${audioPath
-          .split('/')
-          .map(segment => encodeURIComponent(segment))
-          .join('/')}`;
-
-      try {
-
-        const respuesta = await axios.get(githubUrl, {
-          responseType: 'arraybuffer',
-          headers: {
-            'Cache-Control': 'no-cache',
-            Pragma: 'no-cache'
-          },
-          validateStatus: status => status === 200
-        });
-
-        if (
-          respuesta.data &&
-          respuesta.data.byteLength > 0
-        ) {
-          archivoEncontrado = Buffer.from(respuesta.data);
-          extensionEncontrada = extension;
-          break;
-        }
-
-      } catch (error) {
-
-        if (error.response?.status !== 404) {
-          throw error;
-        }
-      }
-    }
-
-    if (!archivoEncontrado) {
-      return res.status(404).json({
-        error: 'No se encontró el archivo de audio',
-        version: referenciaGitHub
-      });
-    }
-
-    const tamano = archivoEncontrado.length;
-    const range = req.headers.range;
-
-    res.set({
-      'Content-Type': tiposMime[extensionEncontrada],
-      'Accept-Ranges': 'bytes',
-      'Cache-Control':
-        'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-      'X-Content-Type-Options': 'nosniff'
-    });
-
-    if (range) {
-
-      const coincidencia =
-        /^bytes=(\d*)-(\d*)$/.exec(range);
-
-      if (!coincidencia) {
-        return res.status(416).set({
-          'Content-Range': `bytes */${tamano}`
-        }).end();
-      }
-
-      let inicio;
-      let fin;
-
-      if (coincidencia[1] === '') {
-
-        const cantidad = Number(coincidencia[2]);
-
-        if (!cantidad || cantidad <= 0) {
-          return res.status(416).set({
-            'Content-Range': `bytes */${tamano}`
-          }).end();
-        }
-
-        inicio = Math.max(0, tamano - cantidad);
-        fin = tamano - 1;
-
-      } else {
-
-        inicio = Number(coincidencia[1]);
-
-        fin = coincidencia[2]
-          ? Number(coincidencia[2])
-          : tamano - 1;
-      }
-
-      if (
-        !Number.isSafeInteger(inicio) ||
-        !Number.isSafeInteger(fin) ||
-        inicio < 0 ||
-        inicio >= tamano ||
-        fin < inicio
-      ) {
-        return res.status(416).set({
-          'Content-Range': `bytes */${tamano}`
-        }).end();
-      }
-
-      fin = Math.min(fin, tamano - 1);
-
-      const fragmento = archivoEncontrado.subarray(
-        inicio,
-        fin + 1
-      );
-
-      res.status(206);
-
-      res.set({
-        'Content-Length': fragmento.length,
-        'Content-Range':
-          `bytes ${inicio}-${fin}/${tamano}`
-      });
-
-      return res.end(fragmento);
-    }
-
-    res.set({
-      'Content-Length': tamano
-    });
-
-    return res.status(200).end(archivoEncontrado);
-
-  } catch (error) {
-
-    console.error(
-      'ERROR AL REPRODUCIR AUDIO:',
-      error.response?.data || error.message
-    );
-
-    return res.status(500).json({
-      error: 'No fue posible recuperar el audio',
-      detalle:
-        error.response?.data?.message ||
-        error.message
-    });
-  }
-});
-
-// ============================
-// CRUD DICCIONARIO Y CORPUS
-// ============================
-
-// CREAR REGISTRO
 
 app.post('/:tipo', async (req, res) => {
 
@@ -1554,34 +1258,31 @@ app.post('/:tipo', async (req, res) => {
     const { tipo } = req.params;
     const { agrupacion } = req.query;
 
-    const { data, sha, path } =
-      await obtenerArchivo(tipo, agrupacion, true);
-
-    const campoId =
-      tipo === 'diccionario' ? 'idPalabra' :
-      tipo === 'corpus' ? 'idExpresion' :
-      null;
-
-    if (!campoId) {
+    if (!['diccionario', 'corpus'].includes(tipo)) {
       return res.status(400).json({
         error: 'Tipo no válido'
       });
     }
 
-    const nuevoId = data.length > 0
-      ? Math.max(
-          ...data.map(d => Number(d[campoId]) || 0)
-        ) + 1
+    const { data, sha, path } =
+      await obtenerArchivo(tipo, agrupacion, true);
+
+    const campoId = tipo === 'diccionario'
+      ? 'idPalabra'
+      : 'idExpresion';
+
+    const nuevoId = data.length
+      ? Math.max(...data.map(item =>
+          Number(item[campoId]) || 0
+        )) + 1
       : 1;
 
-    const nuevoRegistro = {
+    data.push({
       ...req.body,
       [campoId]: String(nuevoId)
-    };
+    });
 
-    data.push(nuevoRegistro);
-
-    const response = await guardarArchivoGitHub(
+    const respuesta = await guardarArchivoGitHub(
       path,
       data,
       sha,
@@ -1590,21 +1291,19 @@ app.post('/:tipo', async (req, res) => {
 
     cacheData[`${tipo}_${agrupacion}`] = data;
     cacheSHA[`${tipo}_${agrupacion}`] =
-      response.content.sha;
+      respuesta.content.sha;
 
-    res.json({
-      mensaje: 'Registro creado correctamente'
+    return res.json({
+      mensaje: 'Registro creado correctamente',
+      id: nuevoId
     });
 
   } catch (error) {
 
-    console.error(
-      'ERROR CREAR REGISTRO:',
-      error.response?.data || error.message
-    );
+    console.error('ERROR CREAR REGISTRO:', error.message);
 
-    res.status(500).json({
-      error: error.response?.data || error.message
+    return res.status(500).json({
+      error: error.message
     });
   }
 });
@@ -1618,31 +1317,20 @@ app.put('/:tipo/:id', async (req, res) => {
   try {
 
     const { tipo, id } = req.params;
+    const { variante, agrupacion } = req.query;
 
-    const {
-      variante,
-      agrupacion
-    } = req.query;
-
-    if (!agrupacion || !variante) {
+    if (!['diccionario', 'corpus'].includes(tipo)) {
       return res.status(400).json({
-        error: 'Debe enviar variante y agrupacion'
+        error: 'Tipo no válido'
       });
     }
 
     const { data, sha, path } =
       await obtenerArchivo(tipo, agrupacion, true);
 
-    const campoId =
-      tipo === 'diccionario' ? 'idPalabra' :
-      tipo === 'corpus' ? 'idExpresion' :
-      null;
-
-    if (!campoId) {
-      return res.status(400).json({
-        error: 'Tipo no válido'
-      });
-    }
+    const campoId = tipo === 'diccionario'
+      ? 'idPalabra'
+      : 'idExpresion';
 
     const index = data.findIndex(item =>
       String(item[campoId]) === String(id) &&
@@ -1664,61 +1352,41 @@ app.put('/:tipo/:id', async (req, res) => {
 
     if (
       tipo === 'diccionario' &&
-      (
-        req.body.audioUrl === null ||
-        req.body.audioUrl === undefined ||
-        req.body.audioUrl === ''
-      ) &&
-      typeof audioAnterior === 'string' &&
-      audioAnterior.trim() !== ''
+      !req.body.audioUrl &&
+      audioAnterior
     ) {
       data[index].audioUrl = audioAnterior;
     }
 
-    const response = await guardarArchivoGitHub(
+    const respuesta = await guardarArchivoGitHub(
       path,
       data,
       sha,
-      `Actualización en ${tipo} ID ${id}`
+      `Actualizar ${tipo} ${id}`
     );
 
     cacheData[`${tipo}_${agrupacion}`] = data;
     cacheSHA[`${tipo}_${agrupacion}`] =
-      response.content.sha;
+      respuesta.content.sha;
 
-    console.log('REGISTRO ACTUALIZADO:', {
-      tipo,
-      id,
-      variante,
-      agrupacion,
-      audioUrl: tipo === 'diccionario'
-        ? data[index].audioUrl
-        : undefined
-    });
-
-    res.json({
+    return res.json({
       mensaje: 'Registro actualizado correctamente',
-      audioUrl: tipo === 'diccionario'
-        ? data[index].audioUrl || null
-        : undefined
+      audioUrl: data[index].audioUrl || null
     });
 
   } catch (error) {
 
-    console.error(
-      'ERROR ACTUALIZAR REGISTRO:',
-      error.response?.data || error.message
-    );
+    console.error('ERROR ACTUALIZAR REGISTRO:', error.message);
 
-    res.status(500).json({
-      error: error.response?.data || error.message
+    return res.status(500).json({
+      error: error.message
     });
   }
 });
 
-// ============================
+// ==========================================
 // ELIMINAR REGISTRO
-// ============================
+// ==========================================
 
 app.delete('/:tipo/:id', async (req, res) => {
 
@@ -1727,55 +1395,51 @@ app.delete('/:tipo/:id', async (req, res) => {
     const { tipo, id } = req.params;
     const { agrupacion } = req.query;
 
-    const { data, sha, path } =
-      await obtenerArchivo(tipo, agrupacion, true);
-
-    const campoId =
-      tipo === 'diccionario' ? 'idPalabra' :
-      tipo === 'corpus' ? 'idExpresion' :
-      null;
-
-    if (!campoId) {
+    if (!['diccionario', 'corpus'].includes(tipo)) {
       return res.status(400).json({
         error: 'Tipo no válido'
       });
     }
 
+    const { data, sha, path } =
+      await obtenerArchivo(tipo, agrupacion, true);
+
+    const campoId = tipo === 'diccionario'
+      ? 'idPalabra'
+      : 'idExpresion';
+
     const nuevoArray = data.filter(item =>
       String(item[campoId]) !== String(id)
     );
 
-    const response = await guardarArchivoGitHub(
+    const respuesta = await guardarArchivoGitHub(
       path,
       nuevoArray,
       sha,
-      `Eliminación en ${tipo}`
+      `Eliminar ${tipo} ${id}`
     );
 
     cacheData[`${tipo}_${agrupacion}`] = nuevoArray;
     cacheSHA[`${tipo}_${agrupacion}`] =
-      response.content.sha;
+      respuesta.content.sha;
 
-    res.json({
+    return res.json({
       mensaje: 'Registro eliminado correctamente'
     });
 
   } catch (error) {
 
-    console.error(
-      'ERROR ELIMINAR REGISTRO:',
-      error.response?.data || error.message
-    );
+    console.error('ERROR ELIMINAR REGISTRO:', error.message);
 
-    res.status(500).json({
-      error: error.response?.data || error.message
+    return res.status(500).json({
+      error: error.message
     });
   }
 });
 
-// ============================
-// GET CON BÚSQUEDA Y PAGINACIÓN
-// ============================
+// ==========================================
+// CONSULTAR DICCIONARIO, CORPUS Y USUARIOS
+// ==========================================
 
 app.get('/:tipo', async (req, res) => {
 
@@ -1809,7 +1473,7 @@ app.get('/:tipo', async (req, res) => {
       tipo === 'diccionario'
     );
 
-    let resultado = Array.isArray(data) ? data : [];
+    let resultado = data;
 
     if (tipo === 'diccionario') {
 
@@ -1817,60 +1481,34 @@ app.get('/:tipo', async (req, res) => {
         ...item,
         audioUrl:
           typeof item.audioUrl === 'string' &&
-          item.audioUrl.trim() !== ''
+          item.audioUrl.trim()
             ? item.audioUrl.trim()
             : null
       }));
-
-      const audios = resultado.filter(item =>
-        typeof item.audioUrl === 'string' &&
-        item.audioUrl.trim() !== ''
-      );
-
-      console.log(
-        '========== DIAGNÓSTICO GET DICCIONARIO =========='
-      );
-
-      console.log('Agrupación:', agrupacion);
-      console.log('Variante:', variante);
-      console.log('Registros recibidos:', resultado.length);
-      console.log('Registros con audio:', audios.length);
-
-      console.log(
-        'Ejemplos de registros con audio:',
-        audios.slice(0, 5).map(item => ({
-          idPalabra: item.idPalabra,
-          nombrePalabra: item.nombrePalabra,
-          audioUrl: item.audioUrl
-        }))
-      );
     }
 
     if (variante) {
 
-      const campoFiltro =
-        tipo === 'diccionario' ? 'idDiccionario' :
-        tipo === 'corpus' ? 'idCorpus' :
-        null;
+      const campo = tipo === 'diccionario'
+        ? 'idDiccionario'
+        : 'idCorpus';
 
-      if (campoFiltro) {
+      if (tipo !== 'usuarios') {
         resultado = resultado.filter(item =>
-          String(item[campoFiltro]) === String(variante)
+          String(item[campo]) === String(variante)
         );
       }
     }
 
-    const busqueda = String(q || '')
-      .trim()
-      .toLocaleLowerCase();
-
-    if (busqueda) {
+    if (q) {
 
       const normalizar = valor =>
         String(valor || '')
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
-          .toLocaleLowerCase();
+          .toLowerCase();
+
+      const busqueda = normalizar(q);
 
       resultado = resultado.filter(item => {
 
@@ -1885,7 +1523,7 @@ app.get('/:tipo', async (req, res) => {
           : Object.values(item);
 
         return campos.some(valor =>
-          normalizar(valor).includes(normalizar(busqueda))
+          normalizar(valor).includes(busqueda)
         );
       });
     }
@@ -1904,51 +1542,44 @@ app.get('/:tipo', async (req, res) => {
       parseInt(pagina, 10) || 1
     );
 
-    const limiteSolicitado =
-      parseInt(limite, 10) || 100;
-
-    const limiteRegistros = Math.min(
+    const limiteActual = Math.min(
       100,
-      Math.max(1, limiteSolicitado)
+      Math.max(1, parseInt(limite, 10) || 100)
     );
 
     const total = resultado.length;
-
-    const inicio =
-      (paginaActual - 1) * limiteRegistros;
+    const inicio = (paginaActual - 1) * limiteActual;
 
     const datos = resultado.slice(
       inicio,
-      inicio + limiteRegistros
+      inicio + limiteActual
     );
 
     return res.json({
       datos,
       pagina: paginaActual,
-      limite: limiteRegistros,
+      limite: limiteActual,
       total,
       hayMas: inicio + datos.length < total
     });
 
   } catch (error) {
 
-    console.error(
-      'Error al consultar registros:',
-      error.response?.data || error.message
-    );
+    console.error('ERROR CONSULTA:', error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: error.message
     });
   }
 });
 
-// ============================
-// SERVIDOR
-// ============================
+// ==========================================
+// INICIAR SERVIDOR
+// ==========================================
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`Servidor activo en puerto ${PORT}`);
+  console.log(`UMAR Multilingua activo en puerto ${PORT}`);
 });
+
