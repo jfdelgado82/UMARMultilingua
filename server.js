@@ -1,4 +1,3 @@
-
 // ============================
 // UMAR MULTILINGUA BACKEND
 // ============================
@@ -67,6 +66,69 @@ function githubContentsUrl(path) {
   return `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}`;
 }
 
+function githubBlobUrl(sha) {
+  return `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`;
+}
+
+// ============================
+// OBTENER CONTENIDO BASE64
+// ============================
+
+async function obtenerContenidoGitHub(response, path) {
+
+  let contenidoBase64 = response.data.content;
+
+  // La Contents API puede omitir content cuando el archivo
+  // supera el límite de tamaño que permite devolver directamente.
+
+  if (!contenidoBase64) {
+
+    const sha = response.data.sha;
+
+    if (!sha) {
+      throw new Error(
+        `GitHub no devolvió el SHA necesario para leer ${path}`
+      );
+    }
+
+    console.log(
+      'CONTENIDO NO DISPONIBLE EN CONTENTS API. CONSULTANDO GIT BLOBS:',
+      { path, sha }
+    );
+
+    const blobResponse = await axios.get(
+      githubBlobUrl(sha),
+      {
+        headers: githubHeaders()
+      }
+    );
+
+    if (
+      !blobResponse.data.content ||
+      blobResponse.data.encoding !== 'base64'
+    ) {
+      throw new Error(
+        `GitHub no devolvió contenido Base64 para ${path}`
+      );
+    }
+
+    contenidoBase64 = blobResponse.data.content;
+  }
+
+  const contenido = Buffer.from(
+    contenidoBase64.replace(/\s/g, ''),
+    'base64'
+  ).toString('utf8');
+
+  try {
+    return JSON.parse(contenido);
+  } catch (error) {
+    throw new Error(
+      `No se pudo interpretar el JSON ${path}: ${error.message}`
+    );
+  }
+}
+
 // ============================
 // OBTENER ARCHIVO DESDE GITHUB
 // ============================
@@ -102,6 +164,7 @@ async function obtenerArchivo(tipo, agrupacion, forzar = false) {
 
   const url = githubContentsUrl(path);
 
+  // Obtener SHA y contenido desde la misma versión del archivo.
   const response = await axios.get(url, {
     headers: {
       ...githubHeaders(),
@@ -115,34 +178,22 @@ async function obtenerArchivo(tipo, agrupacion, forzar = false) {
   const sha = response.data.sha;
 
   if (!sha) {
-    throw new Error(`GitHub no devolvió el SHA de ${path}`);
-  }
-
-  // Descargar el contenido de la misma rama.
-  const raw = await axios.get(response.data.download_url, {
-    headers: {
-      'Cache-Control': 'no-cache'
-    },
-    responseType: 'text'
-  });
-
-  let contenido = raw.data;
-
-  if (typeof contenido === 'string') {
-    contenido = JSON.parse(contenido);
-  }
-
-  if (
-    tipo === 'diccionario' &&
-    !Array.isArray(contenido)
-  ) {
     throw new Error(
-      `El archivo ${path} no contiene un arreglo JSON válido`
+      `GitHub no devolvió el SHA del archivo ${path}`
     );
   }
 
+  const contenido = await obtenerContenidoGitHub(
+    response,
+    path
+  );
+
   if (
-    tipo === 'usuarios' &&
+    (
+      tipo === 'diccionario' ||
+      tipo === 'corpus' ||
+      tipo === 'usuarios'
+    ) &&
     !Array.isArray(contenido)
   ) {
     throw new Error(
@@ -182,7 +233,18 @@ async function guardarArchivoGitHub(path, data, sha, mensaje) {
     );
   }
 
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('Falta configurar GITHUB_TOKEN');
+  }
+
   const url = githubContentsUrl(path);
+
+  console.log('ACTUALIZANDO ARCHIVO EN GITHUB:', {
+    path,
+    sha,
+    branch,
+    registros: Array.isArray(data) ? data.length : undefined
+  });
 
   const response = await axios.put(
     url,
@@ -206,6 +268,12 @@ async function guardarArchivoGitHub(path, data, sha, mensaje) {
     );
   }
 
+  console.log('ARCHIVO ACTUALIZADO EN GITHUB:', {
+    path,
+    nuevoSHA: response.data.content.sha,
+    commit: response.data.commit?.sha
+  });
+
   return response.data;
 }
 
@@ -216,7 +284,9 @@ async function guardarArchivoGitHub(path, data, sha, mensaje) {
 function convertirBase64Audio(valor) {
 
   if (!valor || typeof valor !== 'string') {
-    throw new Error('No se recibió información Base64 del audio');
+    throw new Error(
+      'No se recibió información Base64 del audio'
+    );
   }
 
   let base64 = valor.trim();
@@ -226,13 +296,17 @@ function convertirBase64Audio(valor) {
     const separador = base64.indexOf(',');
 
     if (separador === -1) {
-      throw new Error('El formato Data URL del audio es incorrecto');
+      throw new Error(
+        'El formato Data URL del audio es incorrecto'
+      );
     }
 
     const encabezado = base64.substring(0, separador);
 
     if (!/;base64$/i.test(encabezado)) {
-      throw new Error('La Data URL no contiene información Base64');
+      throw new Error(
+        'La Data URL no contiene información Base64'
+      );
     }
 
     base64 = base64.substring(separador + 1);
@@ -253,7 +327,9 @@ function convertirBase64Audio(valor) {
   const sinPadding = base64.replace(/=+$/, '');
 
   if (sinPadding.length === 0) {
-    throw new Error('La información Base64 está vacía');
+    throw new Error(
+      'La información Base64 está vacía'
+    );
   }
 
   if (sinPadding.length % 4 === 1) {
@@ -262,7 +338,8 @@ function convertirBase64Audio(valor) {
     );
   }
 
-  const paddingOriginal = base64.length - sinPadding.length;
+  const paddingOriginal =
+    base64.length - sinPadding.length;
 
   if (
     paddingOriginal > 0 &&
@@ -274,11 +351,15 @@ function convertirBase64Audio(valor) {
   }
 
   const base64Completo = sinPadding.padEnd(
-    sinPadding.length + ((4 - sinPadding.length % 4) % 4),
+    sinPadding.length +
+      ((4 - sinPadding.length % 4) % 4),
     '='
   );
 
-  const buffer = Buffer.from(base64Completo, 'base64');
+  const buffer = Buffer.from(
+    base64Completo,
+    'base64'
+  );
 
   if (!buffer.length) {
     throw new Error('El audio recibido está vacío');
@@ -382,7 +463,9 @@ async function recuperarAudiosExistentes(agrupacion) {
   const variantes = [
     ...new Set(
       data
-        .map(item => String(item.idDiccionario || '').trim())
+        .map(item =>
+          String(item.idDiccionario || '').trim()
+        )
         .filter(Boolean)
     )
   ];
@@ -535,7 +618,9 @@ async function recuperarAudiosExistentes(agrupacion) {
     noEncontrados
   };
 
-  console.log('========== RECUPERACIÓN DE AUDIOS ==========');
+  console.log(
+    '========== RECUPERACIÓN DE AUDIOS =========='
+  );
   console.log(resultado);
 
   return resultado;
@@ -579,7 +664,8 @@ app.post('/recuperar-audios/:agrupacion', async (req, res) => {
 
     if (![1, 2].includes(agrupacion)) {
       return res.status(400).json({
-        error: 'La agrupación debe ser 1 (Zapoteco) o 2 (Chatino)'
+        error:
+          'La agrupación debe ser 1 (Zapoteco) o 2 (Chatino)'
       });
     }
 
@@ -600,7 +686,8 @@ app.post('/recuperar-audios/:agrupacion', async (req, res) => {
 
     return res.status(500).json({
       error: 'No fue posible recuperar los audios',
-      detalle: error.response?.data || error.message
+      detalle:
+        error.response?.data || error.message
     });
   }
 });
@@ -613,7 +700,10 @@ app.post('/login', async (req, res) => {
 
   try {
 
-    const { correoElectronico, contraseña } = req.body;
+    const {
+      correoElectronico,
+      contraseña
+    } = req.body;
 
     if (!correoElectronico || !contraseña) {
       return res.status(400).json({
@@ -621,7 +711,8 @@ app.post('/login', async (req, res) => {
       });
     }
 
-    const { data } = await obtenerArchivo('usuarios', 0);
+    const { data } =
+      await obtenerArchivo('usuarios', 0);
 
     const usuario = data.find(u =>
       u.correoElectronico === correoElectronico
@@ -647,7 +738,9 @@ app.post('/login', async (req, res) => {
     const JWT_SECRET = process.env.JWT_SECRET;
 
     if (!JWT_SECRET) {
-      throw new Error('Falta configurar JWT_SECRET en Render');
+      throw new Error(
+        'Falta configurar JWT_SECRET en Render'
+      );
     }
 
     const token = jwt.sign(
@@ -856,6 +949,8 @@ app.delete('/usuarios/:correo', async (req, res) => {
 
 app.post('/diccionario/:id/audio', async (req, res) => {
 
+  let etapa = 'inicio';
+
   try {
 
     const { id } = req.params;
@@ -912,7 +1007,9 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     let buffer;
 
     try {
+
       buffer = convertirBase64Audio(audioBase64);
+
     } catch (errorBase64) {
 
       console.error('ERROR VALIDANDO BASE64:', {
@@ -928,7 +1025,10 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    console.log('========== VALIDACIÓN DE AUDIO ==========');
+    console.log(
+      '========== VALIDACIÓN DE AUDIO =========='
+    );
+
     console.log('Vocablo:', id);
     console.log('Variante:', variante);
     console.log('Agrupación:', agrupacion);
@@ -957,14 +1057,22 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     }
 
     // 1. Obtener el JSON actual de GitHub.
+
+    etapa = 'lectura del JSON del diccionario';
+
     const { data, sha, path } =
       await obtenerArchivo('diccionario', agrupacion, true);
 
     if (!Array.isArray(data)) {
-      throw new Error('El JSON del diccionario no es un arreglo');
+      throw new Error(
+        'El JSON del diccionario no es un arreglo'
+      );
     }
 
     // 2. Encontrar el registro correspondiente.
+
+    etapa = 'búsqueda del vocablo';
+
     const index = data.findIndex(item =>
       String(item.idPalabra) === String(id) &&
       String(item.idDiccionario) === String(variante)
@@ -987,12 +1095,18 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     });
 
     // 3. Crear la ruta del archivo de audio.
+
+    etapa = 'preparación de la ruta del audio';
+
     const audioPath =
       `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
 
     const audioApiUrl = githubContentsUrl(audioPath);
 
     // 4. Verificar si el audio ya existe.
+
+    etapa = 'consulta del audio existente';
+
     let shaAudio;
 
     try {
@@ -1014,6 +1128,9 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     }
 
     // 5. Subir o reemplazar el audio en GitHub.
+
+    etapa = 'subida del archivo de audio a GitHub';
+
     const respuestaAudio = await axios.put(
       audioApiUrl,
       {
@@ -1039,6 +1156,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     });
 
     // 6. Construir la URL que utilizará Ionic.
+
     const audioUrl =
       `https://umarmultilingua.onrender.com/diccionario/${encodeURIComponent(id)}/audio` +
       `?variante=${encodeURIComponent(variante)}` +
@@ -1046,6 +1164,9 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       `&formato=${encodeURIComponent(extension)}`;
 
     // 7. Asignar la URL al registro.
+
+    etapa = 'asignación de audioUrl';
+
     data[index].audioUrl = audioUrl;
 
     console.log('URL ASIGNADA:', {
@@ -1055,6 +1176,9 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     });
 
     // 8. Guardar el JSON actualizado en GitHub.
+
+    etapa = 'actualización del JSON en GitHub';
+
     const respuestaJSON = await guardarArchivoGitHub(
       path,
       data,
@@ -1069,32 +1193,18 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     });
 
     // 9. Leer nuevamente el JSON desde GitHub.
-    const urlVerificacion = githubContentsUrl(path);
+    // Se obtiene contenido y SHA de la misma versión.
+    // Ya no se utiliza download_url.
 
-    const verificacion = await axios.get(urlVerificacion, {
-      headers: {
-        ...githubHeaders(),
-        'Cache-Control': 'no-cache'
-      },
-      params: {
-        ref: branch
-      }
-    });
+    etapa = 'verificación del JSON actualizado';
 
-    const rawVerificacion = await axios.get(
-      verificacion.data.download_url,
-      {
-        headers: {
-          'Cache-Control': 'no-cache'
-        },
-        responseType: 'text'
-      }
+    const verificacion = await obtenerArchivo(
+      'diccionario',
+      agrupacion,
+      true
     );
 
-    const datosVerificados =
-      typeof rawVerificacion.data === 'string'
-        ? JSON.parse(rawVerificacion.data)
-        : rawVerificacion.data;
+    const datosVerificados = verificacion.data;
 
     const registroVerificado = datosVerificados.find(item =>
       String(item.idPalabra) === String(id) &&
@@ -1113,14 +1223,17 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     console.log('VERIFICACIÓN EXITOSA:', {
       idPalabra: registroVerificado.idPalabra,
       idDiccionario: registroVerificado.idDiccionario,
-      audioUrl: registroVerificado.audioUrl
+      audioUrl: registroVerificado.audioUrl,
+      sha: verificacion.sha
     });
 
-    // 10. Actualizar la caché con el contenido verificado.
+    // 10. La lectura forzada ya actualizó la caché.
+    // Se conserva explícitamente la versión verificada.
+
     const cacheKey = `diccionario_${agrupacion}`;
 
     cacheData[cacheKey] = datosVerificados;
-    cacheSHA[cacheKey] = verificacion.data.sha;
+    cacheSHA[cacheKey] = verificacion.sha;
 
     return res.json({
       mensaje: 'Audio y audioUrl guardados correctamente',
@@ -1134,17 +1247,36 @@ app.post('/diccionario/:id/audio', async (req, res) => {
 
   } catch (error) {
 
+    const estadoGitHub = error.response?.status || null;
+
+    const detalleGitHub =
+      error.response?.data || null;
+
     console.error(
-      'ERROR AL GUARDAR AUDIO:',
-      error.response?.data || error.message
+      '========== ERROR AL GUARDAR AUDIO ==========',
+      {
+        etapa,
+        mensaje: error.message,
+        estadoGitHub,
+        detalleGitHub,
+        codigoGitHub: error.response?.data?.message,
+        erroresGitHub: error.response?.data?.errors
+      }
     );
+
+    // Un error de GitHub se devuelve como 502,
+    // conservando el estado original en codigoGitHub.
 
     return res.status(500).json({
       error: 'No fue posible guardar el audio y actualizar el JSON',
+      etapa,
       detalle:
         error.response?.data?.message ||
-        error.response?.data ||
-        error.message
+        error.message,
+      codigoGitHub: estadoGitHub,
+      erroresGitHub:
+        error.response?.data?.errors || null,
+      respuestaGitHub: detalleGitHub
     });
   }
 });
@@ -1158,7 +1290,12 @@ app.get('/diccionario/:id/audio', async (req, res) => {
   try {
 
     const { id } = req.params;
-    const { variante, agrupacion, formato } = req.query;
+
+    const {
+      variante,
+      agrupacion,
+      formato
+    } = req.query;
 
     const agrupaciones = {
       1: 'zapoteco',
@@ -1240,7 +1377,6 @@ app.get('/diccionario/:id/audio', async (req, res) => {
           respuesta.data &&
           respuesta.data.byteLength > 0
         ) {
-
           archivoEncontrado = Buffer.from(respuesta.data);
           extensionEncontrada = extension;
           break;
@@ -1271,7 +1407,8 @@ app.get('/diccionario/:id/audio', async (req, res) => {
 
     if (range) {
 
-      const coincidencia = /^bytes=(\d*)-(\d*)$/.exec(range);
+      const coincidencia =
+        /^bytes=(\d*)-(\d*)$/.exec(range);
 
       if (!coincidencia) {
         return res.status(416).set({
@@ -1429,7 +1566,11 @@ app.put('/:tipo/:id', async (req, res) => {
   try {
 
     const { tipo, id } = req.params;
-    const { variante, agrupacion } = req.query;
+
+    const {
+      variante,
+      agrupacion
+    } = req.query;
 
     if (!agrupacion || !variante) {
       return res.status(400).json({
@@ -1463,6 +1604,7 @@ app.put('/:tipo/:id', async (req, res) => {
     }
 
     // Conservar el audio anterior.
+
     const audioAnterior = data[index].audioUrl;
 
     data[index] = {
@@ -1471,6 +1613,7 @@ app.put('/:tipo/:id', async (req, res) => {
     };
 
     // Evitar que una actualización normal borre el audio.
+
     if (
       tipo === 'diccionario' &&
       (
@@ -1638,7 +1781,10 @@ app.get('/:tipo', async (req, res) => {
         item.audioUrl.trim() !== ''
       );
 
-      console.log('========== DIAGNÓSTICO GET DICCIONARIO ==========');
+      console.log(
+        '========== DIAGNÓSTICO GET DICCIONARIO =========='
+      );
+
       console.log('Agrupación:', agrupacion);
       console.log('Variante:', variante);
       console.log('Registros recibidos:', resultado.length);
