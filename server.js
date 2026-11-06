@@ -78,12 +78,18 @@ async function obtenerArchivo(tipo, agrupacion, forzar = false) {
   const response = await axios.get(url, {
     headers: {
       Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-      Accept: 'application/vnd.github+json'
+      Accept: 'application/vnd.github+json',
+      'Cache-Control': 'no-cache'
     }
   });
 
   const sha = response.data.sha;
-  const raw = await axios.get(response.data.download_url);
+
+  const raw = await axios.get(response.data.download_url, {
+    headers: {
+      'Cache-Control': 'no-cache'
+    }
+  });
 
   cacheData[key] = raw.data;
   cacheSHA[key] = sha;
@@ -107,10 +113,6 @@ function convertirBase64Audio(valor) {
 
   let base64 = valor.trim();
 
-  // Admitir Data URL completa:
-  // data:audio/webm;base64,AAAA...
-  // data:audio/webm;codecs=opus;base64,AAAA...
-
   if (/^data:/i.test(base64)) {
 
     const separador = base64.indexOf(',');
@@ -128,36 +130,30 @@ function convertirBase64Audio(valor) {
     base64 = base64.substring(separador + 1);
   }
 
-  // Eliminar espacios y saltos de línea
   base64 = base64.replace(/\s/g, '');
 
-  // Convertir Base64 URL-safe a Base64 convencional
   base64 = base64
     .replace(/-/g, '+')
     .replace(/_/g, '/');
 
-  // Verificar caracteres permitidos
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
     throw new Error(
       'La información Base64 contiene caracteres no válidos'
     );
   }
 
-  // Eliminar padding para comprobar longitud
   const sinPadding = base64.replace(/=+$/, '');
 
   if (sinPadding.length === 0) {
     throw new Error('La información Base64 está vacía');
   }
 
-  // Una longitud con residuo 1 no es Base64 válido
   if (sinPadding.length % 4 === 1) {
     throw new Error(
       'La longitud de la información Base64 es incorrecta'
     );
   }
 
-  // Comprobar que el padding original, si existe, sea correcto
   const paddingOriginal = base64.length - sinPadding.length;
 
   if (
@@ -167,7 +163,6 @@ function convertirBase64Audio(valor) {
     throw new Error('El padding de la información Base64 es incorrecto');
   }
 
-  // Completar padding cuando no venga incluido
   const base64Completo = sinPadding.padEnd(
     sinPadding.length + ((4 - sinPadding.length % 4) % 4),
     '='
@@ -179,7 +174,6 @@ function convertirBase64Audio(valor) {
     throw new Error('El audio recibido está vacío');
   }
 
-  // Comprobar que la conversión no haya descartado caracteres
   const base64Canonico = buffer
     .toString('base64')
     .replace(/=+$/, '');
@@ -377,7 +371,10 @@ app.post('/usuarios', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ERROR REGISTRO:', error.response?.data || error.message);
+    console.error(
+      'ERROR REGISTRO:',
+      error.response?.data || error.message
+    );
 
     res.status(500).json({
       error: error.response?.data || error.message
@@ -439,7 +436,10 @@ app.put('/usuarios/:correo', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ERROR ACTUALIZAR USUARIO:', error.response?.data || error.message);
+    console.error(
+      'ERROR ACTUALIZAR USUARIO:',
+      error.response?.data || error.message
+    );
 
     res.status(500).json({
       error: error.response?.data || error.message
@@ -490,7 +490,10 @@ app.delete('/usuarios/:correo', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ERROR ELIMINAR USUARIO:', error.response?.data || error.message);
+    console.error(
+      'ERROR ELIMINAR USUARIO:',
+      error.response?.data || error.message
+    );
 
     res.status(500).json({
       error: error.response?.data || error.message
@@ -509,7 +512,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     const { variante, agrupacion } = req.query;
     const { audioBase64, mimeType } = req.body;
 
-    // Validar parámetros
     if (!id || !variante || !agrupacion || !audioBase64) {
       return res.status(400).json({
         error: 'Faltan datos del audio o del vocablo'
@@ -520,7 +522,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       throw new Error('Falta configurar GITHUB_TOKEN');
     }
 
-    // Agrupaciones lingüísticas
     const agrupaciones = {
       1: 'zapoteco',
       2: 'chatino'
@@ -535,7 +536,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    // Extensiones permitidas
     const extensiones = {
       'audio/webm': 'webm',
       'audio/mp4': 'm4a',
@@ -559,7 +559,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    // Convertir Base64 de manera segura
     let buffer;
 
     try {
@@ -591,7 +590,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       buffer.subarray(0, 12).toString('hex')
     );
 
-    // Evitar archivos vacíos o incompletos
     if (buffer.length < 256) {
       return res.status(400).json({
         error: 'El audio recibido está vacío o incompleto',
@@ -599,14 +597,12 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    // Límite de 10 MB
     if (buffer.length > 10 * 1024 * 1024) {
       return res.status(413).json({
         error: 'El audio supera el límite de 10 MB'
       });
     }
 
-    // Verificar firma del archivo
     if (!validarFirmaAudio(buffer, extension)) {
       return res.status(400).json({
         error: 'El contenido no corresponde al formato declarado',
@@ -615,7 +611,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    // Comprobar que existe el vocablo
+    // Obtener JSON actualizado desde GitHub
     const { data, sha, path } =
       await obtenerArchivo('diccionario', agrupacion, true);
 
@@ -630,7 +626,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    // Ruta del audio en GitHub
     const audioPath =
       `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
 
@@ -642,7 +637,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       Accept: 'application/vnd.github+json'
     };
 
-    // Comprobar si ya existe el audio
     let shaAudio;
 
     try {
@@ -655,7 +649,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       }
     }
 
-    // Subir audio a GitHub
     const respuestaAudio = await axios.put(
       githubUrl,
       {
@@ -673,13 +666,12 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       );
     }
 
-    // Dirección de reproducción desde Render
     const audioUrl =
       `https://umarmultilingua.onrender.com/diccionario/${id}/audio` +
       `?variante=${encodeURIComponent(variante)}` +
       `&agrupacion=${encodeURIComponent(agrupacion)}`;
 
-    // Actualizar JSON del diccionario
+    // Guardar dirección permanente en el registro
     data[index].audioUrl = audioUrl;
 
     const jsonUrl =
@@ -698,11 +690,17 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       { headers }
     );
 
-    // Actualizar caché
+    // Actualizar caché con los datos confirmados
     const cacheKey = `diccionario_${agrupacion}`;
 
     cacheData[cacheKey] = data;
     cacheSHA[cacheKey] = respuestaJSON.data.content.sha;
+
+    console.log('AUDIO PERSISTIDO EN JSON:', {
+      idPalabra: data[index].idPalabra,
+      audioUrl: data[index].audioUrl,
+      cacheKey
+    });
 
     console.log(
       'Audio almacenado correctamente:',
@@ -781,7 +779,6 @@ app.get('/diccionario/:id/audio', async (req, res) => {
     let archivoEncontrado = null;
     let extensionEncontrada = null;
 
-    // Buscar el archivo en GitHub
     for (const extension of extensiones) {
 
       const audioPath =
@@ -819,7 +816,6 @@ app.get('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    // Preparar respuesta con soporte Range
     const tamano = archivoEncontrado.length;
     const range = req.headers.range;
 
@@ -844,7 +840,6 @@ app.get('/diccionario/:id/audio', async (req, res) => {
 
       if (coincidencia[1] === '') {
 
-        // Solicitud de los últimos N bytes
         const cantidad = Number(coincidencia[2]);
 
         if (!cantidad || cantidad <= 0) {
@@ -894,7 +889,6 @@ app.get('/diccionario/:id/audio', async (req, res) => {
       return res.end(fragmento);
     }
 
-    // Entregar archivo completo
     res.set({
       'Content-Length': tamano
     });
@@ -980,7 +974,10 @@ app.post('/:tipo', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ERROR CREAR REGISTRO:', error.response?.data || error.message);
+    console.error(
+      'ERROR CREAR REGISTRO:',
+      error.response?.data || error.message
+    );
 
     res.status(500).json({
       error: error.response?.data || error.message
@@ -1127,7 +1124,10 @@ app.delete('/:tipo/:id', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ERROR ELIMINAR REGISTRO:', error.response?.data || error.message);
+    console.error(
+      'ERROR ELIMINAR REGISTRO:',
+      error.response?.data || error.message
+    );
 
     res.status(500).json({
       error: error.response?.data || error.message
@@ -1166,12 +1166,58 @@ app.get('/:tipo', async (req, res) => {
       });
     }
 
-    const { data } =
-      await obtenerArchivo(tipo, agrupacion || 0);
+    // CAMBIO 1:
+    // Forzar lectura de GitHub para el diccionario.
+    // Corpus y usuarios conservan su comportamiento de caché.
+
+    const { data } = await obtenerArchivo(
+      tipo,
+      agrupacion || 0,
+      tipo === 'diccionario'
+    );
 
     let resultado = Array.isArray(data) ? data : [];
 
+    // CAMBIO 2:
+    // Normalizar audioUrl sin perder las direcciones existentes.
+
+    if (tipo === 'diccionario') {
+
+      resultado = resultado.map(item => ({
+        ...item,
+        audioUrl:
+          typeof item.audioUrl === 'string' &&
+          item.audioUrl.trim() !== ''
+            ? item.audioUrl.trim()
+            : null
+      }));
+
+      // CAMBIO 3:
+      // Diagnóstico de registros que tienen audio.
+
+      const audios = resultado.filter(item =>
+        typeof item.audioUrl === 'string' &&
+        item.audioUrl.trim() !== ''
+      );
+
+      console.log('========== DIAGNÓSTICO GET DICCIONARIO ==========');
+      console.log('Agrupación:', agrupacion);
+      console.log('Variante:', variante);
+      console.log('Registros recibidos:', resultado.length);
+      console.log('Registros con audio:', audios.length);
+
+      console.log(
+        'Ejemplos de registros con audio:',
+        audios.slice(0, 5).map(item => ({
+          idPalabra: item.idPalabra,
+          nombrePalabra: item.nombrePalabra,
+          audioUrl: item.audioUrl
+        }))
+      );
+    }
+
     // Filtrar por variante lingüística
+
     if (variante) {
 
       const campoFiltro =
@@ -1187,6 +1233,7 @@ app.get('/:tipo', async (req, res) => {
     }
 
     // Búsqueda en servidor
+
     const busqueda = String(q || '')
       .trim()
       .toLocaleLowerCase();
@@ -1218,6 +1265,7 @@ app.get('/:tipo', async (req, res) => {
     }
 
     // Compatibilidad con consultas anteriores
+
     const solicitaPaginacion =
       pagina !== undefined ||
       limite !== undefined ||
