@@ -7,6 +7,8 @@ const axios = require('axios');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+
 require('dotenv').config();
 
 const app = express();
@@ -229,10 +231,304 @@ function validarFirmaAudio(buffer, extension) {
 }
 
 // ============================
+// RECUPERAR AUDIOS EXISTENTES
+// ============================
+
+async function recuperarAudiosExistentes(agrupacion) {
+
+  const agrupaciones = {
+    1: 'zapoteco',
+    2: 'chatino'
+  };
+
+  const nombreAgrupacion =
+    agrupaciones[Number(agrupacion)];
+
+  if (!nombreAgrupacion) {
+    throw new Error('Agrupación no válida');
+  }
+
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('Falta configurar GITHUB_TOKEN');
+  }
+
+  // Obtener el JSON actualizado desde GitHub.
+  const { data, sha, path } =
+    await obtenerArchivo('diccionario', agrupacion, true);
+
+  if (!Array.isArray(data)) {
+    throw new Error(
+      'El archivo del diccionario no contiene un arreglo válido'
+    );
+  }
+
+  const headers = {
+    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github+json',
+    'Cache-Control': 'no-cache'
+  };
+
+  // Prioridad de extensiones si existe más de un archivo
+  // para el mismo vocablo.
+  const prioridadExtensiones = [
+    'webm',
+    'm4a',
+    'ogg',
+    'mp3',
+    'wav'
+  ];
+
+  // Obtener las variantes lingüísticas del JSON.
+  const variantes = [
+    ...new Set(
+      data
+        .map(item => String(item.idDiccionario || '').trim())
+        .filter(Boolean)
+    )
+  ];
+
+  // Aquí se guardará la relación:
+  // variante -> idPalabra -> extensión.
+  const archivosPorVariante = {};
+
+  // Consultar las carpetas de audios de cada variante.
+  for (const variante of variantes) {
+
+    const carpeta =
+      `audios/${nombreAgrupacion}/${variante}`;
+
+    const githubUrl =
+      `https://api.github.com/repos/${owner}/${repo}/contents/${carpeta}`;
+
+    try {
+
+      const respuesta = await axios.get(githubUrl, {
+        headers
+      });
+
+      const archivos = respuesta.data;
+
+      archivosPorVariante[variante] = {};
+
+      if (!Array.isArray(archivos)) {
+        continue;
+      }
+
+      for (const archivo of archivos) {
+
+        if (archivo.type !== 'file') {
+          continue;
+        }
+
+        const coincidencia = archivo.name.match(
+          /^(\d+)\.(webm|m4a|ogg|mp3|wav)$/i
+        );
+
+        if (!coincidencia) {
+          continue;
+        }
+
+        const idPalabra = coincidencia[1];
+        const extension = coincidencia[2].toLowerCase();
+
+        const extensionActual =
+          archivosPorVariante[variante][idPalabra];
+
+        // Si ya existe una extensión para ese ID,
+        // conservar la que tenga mayor prioridad.
+        if (!extensionActual) {
+
+          archivosPorVariante[variante][idPalabra] =
+            extension;
+
+        } else {
+
+          const prioridadNueva =
+            prioridadExtensiones.indexOf(extension);
+
+          const prioridadActual =
+            prioridadExtensiones.indexOf(extensionActual);
+
+          if (prioridadNueva < prioridadActual) {
+            archivosPorVariante[variante][idPalabra] =
+              extension;
+          }
+        }
+      }
+
+    } catch (error) {
+
+      if (error.response?.status === 404) {
+
+        console.log(
+          'Carpeta de audios no encontrada:',
+          carpeta
+        );
+
+        archivosPorVariante[variante] = {};
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  let recuperados = 0;
+  let yaRegistrados = 0;
+  let noEncontrados = 0;
+
+  // Reconstruir las direcciones de los audios.
+  for (const item of data) {
+
+    const idPalabra = String(item.idPalabra);
+    const variante = String(item.idDiccionario);
+
+    const extension =
+      archivosPorVariante[variante]?.[idPalabra];
+
+    if (!extension) {
+
+      if (
+        typeof item.audioUrl === 'string' &&
+        item.audioUrl.trim() !== ''
+      ) {
+        yaRegistrados++;
+      } else {
+        noEncontrados++;
+      }
+
+      continue;
+    }
+
+    const audioUrl =
+      `https://umarmultilingua.onrender.com/diccionario/${encodeURIComponent(idPalabra)}/audio` +
+      `?variante=${encodeURIComponent(variante)}` +
+      `&agrupacion=${encodeURIComponent(agrupacion)}` +
+      `&formato=${encodeURIComponent(extension)}`;
+
+    if (item.audioUrl === audioUrl) {
+      yaRegistrados++;
+      continue;
+    }
+
+    // Actualizar o reconstruir la dirección del audio.
+    item.audioUrl = audioUrl;
+    recuperados++;
+  }
+
+  // Guardar el JSON únicamente si hubo cambios.
+  if (recuperados > 0) {
+
+    const githubJsonUrl =
+      `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    const respuestaJSON = await axios.put(
+      githubJsonUrl,
+      {
+        message: `Recuperar direcciones de audios de ${nombreAgrupacion}`,
+        content: Buffer.from(
+          JSON.stringify(data, null, 2)
+        ).toString('base64'),
+        sha,
+        branch
+      },
+      {
+        headers
+      }
+    );
+
+    const cacheKey = `diccionario_${agrupacion}`;
+
+    cacheData[cacheKey] = data;
+    cacheSHA[cacheKey] =
+      respuestaJSON.data.content.sha;
+  }
+
+  const resultado = {
+    agrupacion: nombreAgrupacion,
+    variantesRevisadas: variantes.length,
+    registrosRevisados: data.length,
+    recuperados,
+    yaRegistrados,
+    noEncontrados
+  };
+
+  console.log('========== RECUPERACIÓN DE AUDIOS ==========');
+  console.log(resultado);
+
+  return resultado;
+}
+
+// ============================
+// RUTA PROTEGIDA PARA RECUPERAR AUDIOS
+// ============================
+
+app.post('/recuperar-audios/:agrupacion', async (req, res) => {
+
+  try {
+
+    const claveConfigurada =
+      process.env.AUDIO_RECOVERY_SECRET;
+
+    const claveRecibida =
+      req.headers['x-recovery-secret'];
+
+    if (!claveConfigurada) {
+      return res.status(500).json({
+        error: 'Falta configurar AUDIO_RECOVERY_SECRET en Render'
+      });
+    }
+
+    if (
+      typeof claveRecibida !== 'string' ||
+      Buffer.byteLength(claveRecibida) !==
+        Buffer.byteLength(claveConfigurada) ||
+      !crypto.timingSafeEqual(
+        Buffer.from(claveRecibida),
+        Buffer.from(claveConfigurada)
+      )
+    ) {
+      return res.status(401).json({
+        error: 'No autorizado'
+      });
+    }
+
+    const agrupacion = Number(req.params.agrupacion);
+
+    if (![1, 2].includes(agrupacion)) {
+      return res.status(400).json({
+        error: 'La agrupación debe ser 1 (Zapoteco) o 2 (Chatino)'
+      });
+    }
+
+    const resultado =
+      await recuperarAudiosExistentes(agrupacion);
+
+    return res.json({
+      mensaje: 'Proceso de recuperación terminado',
+      resultado
+    });
+
+  } catch (error) {
+
+    console.error(
+      'ERROR AL RECUPERAR AUDIOS:',
+      error.response?.data || error.message
+    );
+
+    return res.status(500).json({
+      error: 'No fue posible recuperar los audios',
+      detalle: error.response?.data || error.message
+    });
+  }
+});
+
+// ============================
 // LOGIN
 // ============================
 
 app.post('/login', async (req, res) => {
+
   try {
 
     const { correoElectronico, contraseña } = req.body;
@@ -293,6 +589,7 @@ app.post('/login', async (req, res) => {
     });
 
   } catch (error) {
+
     console.error('ERROR LOGIN:', error.message);
 
     res.status(500).json({
@@ -306,6 +603,7 @@ app.post('/login', async (req, res) => {
 // ============================
 
 app.post('/usuarios', async (req, res) => {
+
   try {
 
     const {
@@ -371,6 +669,7 @@ app.post('/usuarios', async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(
       'ERROR REGISTRO:',
       error.response?.data || error.message
@@ -387,6 +686,7 @@ app.post('/usuarios', async (req, res) => {
 // ============================
 
 app.put('/usuarios/:correo', async (req, res) => {
+
   try {
 
     const { correo } = req.params;
@@ -436,6 +736,7 @@ app.put('/usuarios/:correo', async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(
       'ERROR ACTUALIZAR USUARIO:',
       error.response?.data || error.message
@@ -452,6 +753,7 @@ app.put('/usuarios/:correo', async (req, res) => {
 // ============================
 
 app.delete('/usuarios/:correo', async (req, res) => {
+
   try {
 
     const { correo } = req.params;
@@ -490,6 +792,7 @@ app.delete('/usuarios/:correo', async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(
       'ERROR ELIMINAR USUARIO:',
       error.response?.data || error.message
@@ -506,6 +809,7 @@ app.delete('/usuarios/:correo', async (req, res) => {
 // ==========================================
 
 app.post('/diccionario/:id/audio', async (req, res) => {
+
   try {
 
     const { id } = req.params;
@@ -562,7 +866,9 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     let buffer;
 
     try {
+
       buffer = convertirBase64Audio(audioBase64);
+
     } catch (errorBase64) {
 
       console.error('ERROR VALIDANDO BASE64:', {
@@ -585,6 +891,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     console.log('MIME:', tipoAudio);
     console.log('Caracteres Base64:', audioBase64.length);
     console.log('Tamaño:', buffer.length, 'bytes');
+
     console.log(
       'Primeros bytes:',
       buffer.subarray(0, 12).toString('hex')
@@ -611,7 +918,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    // Obtener JSON actualizado desde GitHub
+    // Obtener JSON actualizado desde GitHub.
     const { data, sha, path } =
       await obtenerArchivo('diccionario', agrupacion, true);
 
@@ -640,10 +947,12 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     let shaAudio;
 
     try {
+
       const existente = await axios.get(githubUrl, { headers });
       shaAudio = existente.data.sha;
 
     } catch (error) {
+
       if (error.response?.status !== 404) {
         throw error;
       }
@@ -666,12 +975,14 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       );
     }
 
+    // La dirección incluye la extensión exacta del archivo.
     const audioUrl =
-      `https://umarmultilingua.onrender.com/diccionario/${id}/audio` +
+      `https://umarmultilingua.onrender.com/diccionario/${encodeURIComponent(id)}/audio` +
       `?variante=${encodeURIComponent(variante)}` +
-      `&agrupacion=${encodeURIComponent(agrupacion)}`;
+      `&agrupacion=${encodeURIComponent(agrupacion)}` +
+      `&formato=${encodeURIComponent(extension)}`;
 
-    // Guardar dirección permanente en el registro
+    // Guardar dirección permanente en el registro.
     data[index].audioUrl = audioUrl;
 
     const jsonUrl =
@@ -690,11 +1001,12 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       { headers }
     );
 
-    // Actualizar caché con los datos confirmados
+    // Actualizar caché con los datos confirmados.
     const cacheKey = `diccionario_${agrupacion}`;
 
     cacheData[cacheKey] = data;
-    cacheSHA[cacheKey] = respuestaJSON.data.content.sha;
+    cacheSHA[cacheKey] =
+      respuestaJSON.data.content.sha;
 
     console.log('AUDIO PERSISTIDO EN JSON:', {
       idPalabra: data[index].idPalabra,
@@ -724,7 +1036,6 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       error: 'No fue posible guardar el audio',
       detalle: error.response?.data || error.message
     });
-
   }
 });
 
@@ -733,10 +1044,11 @@ app.post('/diccionario/:id/audio', async (req, res) => {
 // ==========================================
 
 app.get('/diccionario/:id/audio', async (req, res) => {
+
   try {
 
     const { id } = req.params;
-    const { variante, agrupacion } = req.query;
+    const { variante, agrupacion, formato } = req.query;
 
     const agrupaciones = {
       1: 'zapoteco',
@@ -756,13 +1068,36 @@ app.get('/diccionario/:id/audio', async (req, res) => {
       throw new Error('Falta configurar GITHUB_TOKEN');
     }
 
-    const extensiones = [
+    const extensionesDisponibles = [
       'webm',
       'm4a',
       'ogg',
       'mp3',
       'wav'
     ];
+
+    const formatoSolicitado =
+      String(formato || '').toLowerCase().trim();
+
+    if (
+      formatoSolicitado &&
+      !extensionesDisponibles.includes(formatoSolicitado)
+    ) {
+      return res.status(400).json({
+        error: 'Formato de audio no válido'
+      });
+    }
+
+    // Si la URL contiene formato, se intenta primero
+    // esa extensión. Las URLs antiguas siguen funcionando.
+    const extensiones = formatoSolicitado
+      ? [
+          formatoSolicitado,
+          ...extensionesDisponibles.filter(
+            extension => extension !== formatoSolicitado
+          )
+        ]
+      : extensionesDisponibles;
 
     const tiposMime = {
       webm: 'audio/webm',
@@ -795,7 +1130,11 @@ app.get('/diccionario/:id/audio', async (req, res) => {
           validateStatus: status => status === 200
         });
 
-        if (respuesta.data && respuesta.data.byteLength > 0) {
+        if (
+          respuesta.data &&
+          respuesta.data.byteLength > 0
+        ) {
+
           archivoEncontrado = Buffer.from(respuesta.data);
           extensionEncontrada = extension;
           break;
@@ -806,7 +1145,6 @@ app.get('/diccionario/:id/audio', async (req, res) => {
         if (error.response?.status !== 404) {
           throw error;
         }
-
       }
     }
 
@@ -905,7 +1243,6 @@ app.get('/diccionario/:id/audio', async (req, res) => {
     res.status(500).json({
       error: 'No fue posible recuperar el audio'
     });
-
   }
 });
 
@@ -916,6 +1253,7 @@ app.get('/diccionario/:id/audio', async (req, res) => {
 // CREAR REGISTRO
 
 app.post('/:tipo', async (req, res) => {
+
   try {
 
     const { tipo } = req.params;
@@ -936,7 +1274,9 @@ app.post('/:tipo', async (req, res) => {
     }
 
     const nuevoId = data.length > 0
-      ? Math.max(...data.map(d => Number(d[campoId]) || 0)) + 1
+      ? Math.max(
+          ...data.map(d => Number(d[campoId]) || 0)
+        ) + 1
       : 1;
 
     const nuevoRegistro = {
@@ -974,6 +1314,7 @@ app.post('/:tipo', async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(
       'ERROR CREAR REGISTRO:',
       error.response?.data || error.message
@@ -988,6 +1329,7 @@ app.post('/:tipo', async (req, res) => {
 // ACTUALIZAR REGISTRO
 
 app.put('/:tipo/:id', async (req, res) => {
+
   try {
 
     const { tipo, id } = req.params;
@@ -1066,13 +1408,13 @@ app.put('/:tipo/:id', async (req, res) => {
     res.status(500).json({
       error: error.response?.data || error.message
     });
-
   }
 });
 
 // ELIMINAR REGISTRO
 
 app.delete('/:tipo/:id', async (req, res) => {
+
   try {
 
     const { tipo, id } = req.params;
@@ -1124,6 +1466,7 @@ app.delete('/:tipo/:id', async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(
       'ERROR ELIMINAR REGISTRO:',
       error.response?.data || error.message
@@ -1142,6 +1485,7 @@ app.delete('/:tipo/:id', async (req, res) => {
 // GET CON BÚSQUEDA Y PAGINACIÓN
 
 app.get('/:tipo', async (req, res) => {
+
   try {
 
     const { tipo } = req.params;
@@ -1166,7 +1510,6 @@ app.get('/:tipo', async (req, res) => {
       });
     }
 
-    // CAMBIO 1:
     // Forzar lectura de GitHub para el diccionario.
     // Corpus y usuarios conservan su comportamiento de caché.
 
@@ -1178,7 +1521,6 @@ app.get('/:tipo', async (req, res) => {
 
     let resultado = Array.isArray(data) ? data : [];
 
-    // CAMBIO 2:
     // Normalizar audioUrl sin perder las direcciones existentes.
 
     if (tipo === 'diccionario') {
@@ -1192,7 +1534,6 @@ app.get('/:tipo', async (req, res) => {
             : null
       }));
 
-      // CAMBIO 3:
       // Diagnóstico de registros que tienen audio.
 
       const audios = resultado.filter(item =>
@@ -1216,7 +1557,7 @@ app.get('/:tipo', async (req, res) => {
       );
     }
 
-    // Filtrar por variante lingüística
+    // Filtrar por variante lingüística.
 
     if (variante) {
 
@@ -1232,7 +1573,7 @@ app.get('/:tipo', async (req, res) => {
       }
     }
 
-    // Búsqueda en servidor
+    // Búsqueda en servidor.
 
     const busqueda = String(q || '')
       .trim()
@@ -1264,7 +1605,7 @@ app.get('/:tipo', async (req, res) => {
       });
     }
 
-    // Compatibilidad con consultas anteriores
+    // Compatibilidad con consultas anteriores.
 
     const solicitaPaginacion =
       pagina !== undefined ||
@@ -1280,7 +1621,8 @@ app.get('/:tipo', async (req, res) => {
       parseInt(pagina, 10) || 1
     );
 
-    const limiteSolicitado = parseInt(limite, 10) || 100;
+    const limiteSolicitado =
+      parseInt(limite, 10) || 100;
 
     const limiteRegistros = Math.min(
       100,
@@ -1315,7 +1657,6 @@ app.get('/:tipo', async (req, res) => {
     res.status(500).json({
       error: error.message
     });
-
   }
 });
 
