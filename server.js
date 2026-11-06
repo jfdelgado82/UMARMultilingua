@@ -96,6 +96,145 @@ async function obtenerArchivo(tipo, agrupacion, forzar = false) {
 }
 
 // ============================
+// CONVERTIR Y VALIDAR BASE64
+// ============================
+
+function convertirBase64Audio(valor) {
+
+  if (!valor || typeof valor !== 'string') {
+    throw new Error('No se recibió información Base64 del audio');
+  }
+
+  let base64 = valor.trim();
+
+  // Admitir Data URL completa:
+  // data:audio/webm;base64,AAAA...
+  // data:audio/webm;codecs=opus;base64,AAAA...
+
+  if (/^data:/i.test(base64)) {
+
+    const separador = base64.indexOf(',');
+
+    if (separador === -1) {
+      throw new Error('El formato Data URL del audio es incorrecto');
+    }
+
+    const encabezado = base64.substring(0, separador);
+
+    if (!/;base64$/i.test(encabezado)) {
+      throw new Error('La Data URL no contiene información Base64');
+    }
+
+    base64 = base64.substring(separador + 1);
+  }
+
+  // Eliminar espacios y saltos de línea
+  base64 = base64.replace(/\s/g, '');
+
+  // Convertir Base64 URL-safe a Base64 convencional
+  base64 = base64
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+
+  // Verificar caracteres permitidos
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
+    throw new Error(
+      'La información Base64 contiene caracteres no válidos'
+    );
+  }
+
+  // Eliminar padding para comprobar longitud
+  const sinPadding = base64.replace(/=+$/, '');
+
+  if (sinPadding.length === 0) {
+    throw new Error('La información Base64 está vacía');
+  }
+
+  // Una longitud con residuo 1 no es Base64 válido
+  if (sinPadding.length % 4 === 1) {
+    throw new Error(
+      'La longitud de la información Base64 es incorrecta'
+    );
+  }
+
+  // Comprobar que el padding original, si existe, sea correcto
+  const paddingOriginal = base64.length - sinPadding.length;
+
+  if (
+    paddingOriginal > 0 &&
+    base64.length % 4 !== 0
+  ) {
+    throw new Error('El padding de la información Base64 es incorrecto');
+  }
+
+  // Completar padding cuando no venga incluido
+  const base64Completo = sinPadding.padEnd(
+    sinPadding.length + ((4 - sinPadding.length % 4) % 4),
+    '='
+  );
+
+  const buffer = Buffer.from(base64Completo, 'base64');
+
+  if (!buffer.length) {
+    throw new Error('El audio recibido está vacío');
+  }
+
+  // Comprobar que la conversión no haya descartado caracteres
+  const base64Canonico = buffer
+    .toString('base64')
+    .replace(/=+$/, '');
+
+  if (base64Canonico !== sinPadding) {
+    throw new Error(
+      'La información Base64 no pudo decodificarse correctamente'
+    );
+  }
+
+  return buffer;
+}
+
+// ============================
+// VALIDAR FIRMA DEL AUDIO
+// ============================
+
+function validarFirmaAudio(buffer, extension) {
+
+  const firmasValidas = {
+
+    webm:
+      buffer.length >= 4 &&
+      buffer.subarray(0, 4).equals(
+        Buffer.from([0x1A, 0x45, 0xDF, 0xA3])
+      ),
+
+    m4a:
+      buffer.length >= 8 &&
+      buffer.toString('ascii', 4, 8) === 'ftyp',
+
+    ogg:
+      buffer.length >= 4 &&
+      buffer.toString('ascii', 0, 4) === 'OggS',
+
+    mp3:
+      buffer.length >= 3 &&
+      (
+        buffer.toString('ascii', 0, 3) === 'ID3' ||
+        (
+          buffer[0] === 0xFF &&
+          (buffer[1] & 0xE0) === 0xE0
+        )
+      ),
+
+    wav:
+      buffer.length >= 12 &&
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WAVE'
+  };
+
+  return Boolean(firmasValidas[extension]);
+}
+
+// ============================
 // LOGIN
 // ============================
 
@@ -160,6 +299,8 @@ app.post('/login', async (req, res) => {
     });
 
   } catch (error) {
+    console.error('ERROR LOGIN:', error.message);
+
     res.status(500).json({
       error: error.message
     });
@@ -179,6 +320,12 @@ app.post('/usuarios', async (req, res) => {
       contraseña,
       rol
     } = req.body;
+
+    if (!nombre || !correoElectronico || !contraseña) {
+      return res.status(400).json({
+        error: 'Faltan datos para registrar al usuario'
+      });
+    }
 
     const { data, sha, path } =
       await obtenerArchivo('usuarios', 0, true);
@@ -211,7 +358,8 @@ app.post('/usuarios', async (req, res) => {
       content: Buffer.from(
         JSON.stringify(data, null, 2)
       ).toString('base64'),
-      sha
+      sha,
+      branch
     };
 
     const response = await axios.put(url, body, {
@@ -229,6 +377,8 @@ app.post('/usuarios', async (req, res) => {
     });
 
   } catch (error) {
+    console.error('ERROR REGISTRO:', error.response?.data || error.message);
+
     res.status(500).json({
       error: error.response?.data || error.message
     });
@@ -270,7 +420,8 @@ app.put('/usuarios/:correo', async (req, res) => {
       content: Buffer.from(
         JSON.stringify(data, null, 2)
       ).toString('base64'),
-      sha
+      sha,
+      branch
     };
 
     const response = await axios.put(url, body, {
@@ -288,6 +439,8 @@ app.put('/usuarios/:correo', async (req, res) => {
     });
 
   } catch (error) {
+    console.error('ERROR ACTUALIZAR USUARIO:', error.response?.data || error.message);
+
     res.status(500).json({
       error: error.response?.data || error.message
     });
@@ -318,7 +471,8 @@ app.delete('/usuarios/:correo', async (req, res) => {
       content: Buffer.from(
         JSON.stringify(nuevoArray, null, 2)
       ).toString('base64'),
-      sha
+      sha,
+      branch
     };
 
     const response = await axios.put(url, body, {
@@ -336,6 +490,8 @@ app.delete('/usuarios/:correo', async (req, res) => {
     });
 
   } catch (error) {
+    console.error('ERROR ELIMINAR USUARIO:', error.response?.data || error.message);
+
     res.status(500).json({
       error: error.response?.data || error.message
     });
@@ -353,7 +509,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     const { variante, agrupacion } = req.query;
     const { audioBase64, mimeType } = req.body;
 
-    // Validar datos
+    // Validar parámetros
     if (!id || !variante || !agrupacion || !audioBase64) {
       return res.status(400).json({
         error: 'Faltan datos del audio o del vocablo'
@@ -403,29 +559,32 @@ app.post('/diccionario/:id/audio', async (req, res) => {
       });
     }
 
-    // Limpiar Base64
-    const base64Limpio = String(audioBase64)
-      .replace(/^data:audio\/[^;]+;base64,/i, '')
-      .replace(/\s/g, '');
+    // Convertir Base64 de manera segura
+    let buffer;
 
-    // Validar estructura Base64
-    if (
-      !base64Limpio ||
-      !/^[A-Za-z0-9+/]*={0,2}$/.test(base64Limpio) ||
-      base64Limpio.length % 4 === 1
-    ) {
+    try {
+      buffer = convertirBase64Audio(audioBase64);
+    } catch (errorBase64) {
+
+      console.error('ERROR VALIDANDO BASE64:', {
+        mensaje: errorBase64.message,
+        tipoDato: typeof audioBase64,
+        longitud: typeof audioBase64 === 'string'
+          ? audioBase64.length
+          : null
+      });
+
       return res.status(400).json({
-        error: 'La información Base64 del audio no es válida'
+        error: errorBase64.message
       });
     }
-
-    const buffer = Buffer.from(base64Limpio, 'base64');
 
     console.log('========== VALIDACIÓN DE AUDIO ==========');
     console.log('Vocablo:', id);
     console.log('Variante:', variante);
     console.log('Agrupación:', agrupacion);
     console.log('MIME:', tipoAudio);
+    console.log('Caracteres Base64:', audioBase64.length);
     console.log('Tamaño:', buffer.length, 'bytes');
     console.log(
       'Primeros bytes:',
@@ -448,35 +607,7 @@ app.post('/diccionario/:id/audio', async (req, res) => {
     }
 
     // Verificar firma del archivo
-    const firmasValidas = {
-      webm: buffer.subarray(0, 4).equals(
-        Buffer.from([0x1A, 0x45, 0xDF, 0xA3])
-      ),
-
-      m4a:
-        buffer.length >= 8 &&
-        buffer.toString('ascii', 4, 8) === 'ftyp',
-
-      ogg:
-        buffer.toString('ascii', 0, 4) === 'OggS',
-
-      mp3:
-        buffer.length >= 3 &&
-        (
-          buffer.toString('ascii', 0, 3) === 'ID3' ||
-          (
-            buffer[0] === 0xFF &&
-            (buffer[1] & 0xE0) === 0xE0
-          )
-        ),
-
-      wav:
-        buffer.length >= 12 &&
-        buffer.toString('ascii', 0, 4) === 'RIFF' &&
-        buffer.toString('ascii', 8, 12) === 'WAVE'
-    };
-
-    if (!firmasValidas[extension]) {
+    if (!validarFirmaAudio(buffer, extension)) {
       return res.status(400).json({
         error: 'El contenido no corresponde al formato declarado',
         formato: tipoAudio,
@@ -712,6 +843,7 @@ app.get('/diccionario/:id/audio', async (req, res) => {
       let fin;
 
       if (coincidencia[1] === '') {
+
         // Solicitud de los últimos N bytes
         const cantidad = Number(coincidencia[2]);
 
@@ -725,6 +857,7 @@ app.get('/diccionario/:id/audio', async (req, res) => {
         fin = tamano - 1;
 
       } else {
+
         inicio = Number(coincidencia[1]);
 
         fin = coincidencia[2]
@@ -809,7 +942,7 @@ app.post('/:tipo', async (req, res) => {
     }
 
     const nuevoId = data.length > 0
-      ? Math.max(...data.map(d => d[campoId] || 0)) + 1
+      ? Math.max(...data.map(d => Number(d[campoId]) || 0)) + 1
       : 1;
 
     const nuevoRegistro = {
@@ -827,7 +960,8 @@ app.post('/:tipo', async (req, res) => {
       content: Buffer.from(
         JSON.stringify(data, null, 2)
       ).toString('base64'),
-      sha
+      sha,
+      branch
     };
 
     const response = await axios.put(url, body, {
@@ -846,6 +980,8 @@ app.post('/:tipo', async (req, res) => {
     });
 
   } catch (error) {
+    console.error('ERROR CREAR REGISTRO:', error.response?.data || error.message);
+
     res.status(500).json({
       error: error.response?.data || error.message
     });
@@ -904,7 +1040,8 @@ app.put('/:tipo/:id', async (req, res) => {
       content: Buffer.from(
         JSON.stringify(data, null, 2)
       ).toString('base64'),
-      sha
+      sha,
+      branch
     };
 
     const response = await axios.put(url, body, {
@@ -925,7 +1062,7 @@ app.put('/:tipo/:id', async (req, res) => {
   } catch (error) {
 
     console.error(
-      'ERROR REAL:',
+      'ERROR ACTUALIZAR REGISTRO:',
       error.response?.data || error.message
     );
 
@@ -970,7 +1107,8 @@ app.delete('/:tipo/:id', async (req, res) => {
       content: Buffer.from(
         JSON.stringify(nuevoArray, null, 2)
       ).toString('base64'),
-      sha
+      sha,
+      branch
     };
 
     const response = await axios.put(url, body, {
@@ -989,6 +1127,8 @@ app.delete('/:tipo/:id', async (req, res) => {
     });
 
   } catch (error) {
+    console.error('ERROR ELIMINAR REGISTRO:', error.response?.data || error.message);
+
     res.status(500).json({
       error: error.response?.data || error.message
     });
@@ -1121,7 +1261,7 @@ app.get('/:tipo', async (req, res) => {
 
     console.error(
       'Error al consultar registros:',
-      error
+      error.response?.data || error.message
     );
 
     res.status(500).json({
