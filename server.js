@@ -1655,6 +1655,10 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
 // CREAR REGISTRO EN DICCIONARIO O CORPUS
 // ==========================================
 
+// ==========================================
+// CREAR NUEVO REGISTRO
+// ==========================================
+
 app.post('/:tipo', async (req, res) => {
 
   try {
@@ -1668,23 +1672,109 @@ app.post('/:tipo', async (req, res) => {
       });
     }
 
+    if (!agrupacion) {
+      return res.status(400).json({
+        error: 'Debe especificar una agrupación'
+      });
+    }
+
+    // ==========================================
+    // OBTENER ARCHIVO JSON
+    // ==========================================
+
     const { data, sha, path } =
       await obtenerArchivo(tipo, agrupacion, true);
+
+    // ==========================================
+    // VALIDAR CAMPOS DEL DICCIONARIO
+    // ==========================================
+
+    if (tipo === 'diccionario') {
+
+      const nombreNuevo = String(
+        req.body.nombrePalabra || ''
+      )
+        .trim()
+        .toLocaleLowerCase();
+
+      if (!nombreNuevo) {
+        return res.status(400).json({
+          error: 'El nombre del vocablo es obligatorio'
+        });
+      }
+
+      // ==========================================
+      // BUSCAR VOCABLO DUPLICADO
+      // ==========================================
+
+      const duplicado = data.find(item => {
+
+        const nombreExistente = String(
+          item.nombrePalabra || ''
+        )
+          .trim()
+          .toLocaleLowerCase();
+
+        const mismaVariante =
+          String(item.idDiccionario) ===
+          String(req.body.idDiccionario);
+
+        return (
+          mismaVariante &&
+          nombreExistente === nombreNuevo
+        );
+
+      });
+
+      if (duplicado) {
+
+        return res.status(409).json({
+
+          mensaje:
+            'El vocablo ya existe en esta variante lingüística.',
+
+          duplicado: true,
+
+          idPalabra: duplicado.idPalabra,
+
+          nombrePalabra: duplicado.nombrePalabra
+
+        });
+
+      }
+
+    }
+
+    // ==========================================
+    // GENERAR IDENTIFICADOR
+    // ==========================================
 
     const campoId = tipo === 'diccionario'
       ? 'idPalabra'
       : 'idExpresion';
 
     const nuevoId = data.length
-      ? Math.max(...data.map(item =>
-          Number(item[campoId]) || 0
-        )) + 1
+      ? Math.max(
+          ...data.map(item =>
+            Number(item[campoId]) || 0
+          )
+        ) + 1
       : 1;
 
-    data.push({
+    // ==========================================
+    // CONSTRUIR NUEVO REGISTRO
+    // ==========================================
+
+    const nuevoRegistro = {
       ...req.body,
       [campoId]: String(nuevoId)
-    });
+    };
+
+    data.push(nuevoRegistro);
+
+    // ==========================================
+    // GUARDAR EN GITHUB
+    // ==========================================
 
     const respuesta = await guardarArchivoGitHub(
       path,
@@ -1693,23 +1783,36 @@ app.post('/:tipo', async (req, res) => {
       `Nuevo registro en ${tipo}`
     );
 
+    // ==========================================
+    // ACTUALIZAR CACHÉ
+    // ==========================================
+
     cacheData[`${tipo}_${agrupacion}`] = data;
+
     cacheSHA[`${tipo}_${agrupacion}`] =
       respuesta.content.sha;
 
     return res.json({
+
       mensaje: 'Registro creado correctamente',
+
       id: nuevoId
+
     });
 
   } catch (error) {
 
-    console.error('ERROR CREAR REGISTRO:', error.message);
+    console.error(
+      'ERROR CREAR REGISTRO:',
+      error.message
+    );
 
     return res.status(500).json({
       error: error.message
     });
+
   }
+
 });
 
 // ==========================================
