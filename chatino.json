@@ -42872,18 +42872,5 @@
     "audioUrl": null,
     "imagenUrl": null,
     "aceptado": 1
-  },
-  {
-    "idPalabra": "33070",
-    "idDiccionario": "8",
-    "nombrePalabra": "aaaa",
-    "lexema": "aaaa",
-    "gramema": "aaaa",
-    "estatus": "aaaa",
-    "categoriaGramatical": "aaaa",
-    "traduccion": "cambio",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/33070/audio?variante=8&agrupacion=2&formato=webm&version=74f9f34e51116008053ef75c2b6ff8033753d8fc",
-    "imagenUrl": "https://raw.githubusercontent.com/jfdelgado82/UMARMultilingua/b8cb6c696c88e5f57cbb25174df15e8e06dccd35/imagenes/chatino/8/33070.png",
-    "aceptado": 1
   }
 ]
