@@ -42859,18 +42859,5 @@
     "audioUrl": null,
     "imagenUrl": null,
     "aceptado": 1
-  },
-  {
-    "idPalabra": "33069",
-    "idDiccionario": "8",
-    "nombrePalabra": "xxxx",
-    "lexema": "xxxx",
-    "gramema": "xxxx",
-    "estatus": "xxxx",
-    "categoriaGramatical": "xxxx",
-    "traduccion": "55555555",
-    "audioUrl": "https://umarmultilingua.onrender.com/diccionario/33069/audio?variante=8&agrupacion=2&formato=webm&version=6dd375673e41d536f9d3911a92a8de85446cdea1",
-    "imagenUrl": "https://raw.githubusercontent.com/jfdelgado82/UMARMultilingua/36c1fa9bba887888180e38590b593fb5aeb9ff6b/imagenes/chatino/8/33069.png",
-    "aceptado": 1
   }
 ]
