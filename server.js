@@ -64,6 +64,13 @@ const tiposMime = {
   wav: 'audio/wav'
 };
 
+const extensionesImagen = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif'
+};
+
 // ==========================================
 // UTILIDADES GENERALES
 // ==========================================
@@ -325,6 +332,252 @@ async function actualizarAudioEnDiccionario({
 }
 
 // ==========================================
+// ACTUALIZACIÓN SEGURA DE imagenUrl EN DICCIONARIO
+// ==========================================
+
+async function actualizarImagenEnDiccionario({
+  agrupacion,
+  variante,
+  id,
+  imagenUrl,
+  maxIntentos = 5
+}) {
+  const cacheKey = `diccionario_${agrupacion}`;
+
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    try {
+      // Leer siempre la versión más reciente para evitar sobrescribir
+      // cambios realizados por otros usuarios.
+      const resultado = await obtenerArchivo(
+        'diccionario',
+        agrupacion,
+        true
+      );
+
+      const { data, sha, path } = resultado;
+
+      const index = data.findIndex(item =>
+        String(item.idPalabra) === String(id) &&
+        String(item.idDiccionario) === String(variante)
+      );
+
+      if (index === -1) {
+        throw new Error(
+          `No se encontró el vocablo ${id} en la variante ${variante}`
+        );
+      }
+
+      data[index] = {
+        ...data[index],
+        imagenUrl
+      };
+
+      const respuesta = await guardarArchivoGitHub(
+        path,
+        data,
+        sha,
+        `Actualizar imagenUrl del vocablo ${id}`
+      );
+
+      cacheData[cacheKey] = data;
+      cacheSHA[cacheKey] = respuesta.content.sha;
+
+      console.log('IMAGEN URL ACTUALIZADA:', {
+        id,
+        agrupacion,
+        variante,
+        intento,
+        sha: respuesta.content.sha
+      });
+
+      return {
+        path,
+        sha: respuesta.content.sha,
+        imagenUrl
+      };
+
+    } catch (error) {
+      if (!esConflictoGitHub(error) || intento === maxIntentos) {
+        throw error;
+      }
+
+      console.warn(
+        `Conflicto al actualizar imagenUrl. Reintento ${intento}/${maxIntentos}`,
+        error.response?.data || error.message
+      );
+
+      await esperar(150 * intento + Math.floor(Math.random() * 100));
+    }
+  }
+
+  throw new Error(
+    'No fue posible actualizar imagenUrl después de varios intentos'
+  );
+}
+
+// ==========================================
+// VALIDACIÓN DE IMÁGENES
+// ==========================================
+
+function convertirBase64Imagen(valor) {
+  if (!valor || typeof valor !== 'string') {
+    throw new Error('No se recibió la imagen en Base64');
+  }
+
+  let base64 = valor.trim();
+
+  if (/^data:/i.test(base64)) {
+    const separador = base64.indexOf(',');
+
+    if (separador === -1) {
+      throw new Error('Data URL de imagen inválida');
+    }
+
+    base64 = base64.substring(separador + 1);
+  }
+
+  base64 = base64
+    .replace(/\s/g, '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
+    throw new Error('Base64 de imagen inválido');
+  }
+
+  const sinPadding = base64.replace(/=+$/, '');
+
+  if (
+    sinPadding.length === 0 ||
+    sinPadding.length % 4 === 1
+  ) {
+    throw new Error('Longitud Base64 de imagen incorrecta');
+  }
+
+  const completo = sinPadding.padEnd(
+    sinPadding.length + ((4 - sinPadding.length % 4) % 4),
+    '='
+  );
+
+  const buffer = Buffer.from(completo, 'base64');
+
+  if (
+    buffer.toString('base64').replace(/=+$/, '') !== sinPadding
+  ) {
+    throw new Error('No se pudo decodificar correctamente la imagen');
+  }
+
+  return buffer;
+}
+
+function validarFirmaImagen(buffer, extension) {
+  const firmas = {
+    jpg:
+      buffer.length >= 3 &&
+      buffer[0] === 0xFF &&
+      buffer[1] === 0xD8 &&
+      buffer[2] === 0xFF,
+
+    png:
+      buffer.length >= 8 &&
+      buffer.subarray(0, 8).equals(
+        Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+      ),
+
+    webp:
+      buffer.length >= 12 &&
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WEBP',
+
+    gif:
+      buffer.length >= 6 &&
+      ['GIF87a', 'GIF89a'].includes(buffer.toString('ascii', 0, 6))
+  };
+
+  return Boolean(firmas[extension]);
+}
+
+// ==========================================
+// SUBIR O REEMPLAZAR IMAGEN EN GITHUB
+// ==========================================
+
+async function subirImagenGitHub({
+  imagenPath,
+  buffer,
+  id,
+  maxIntentos = 5
+}) {
+  validarTokenGitHub();
+
+  const url = githubContentsUrl(imagenPath);
+
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    try {
+      let shaImagen;
+
+      try {
+        const existente = await axios.get(url, {
+          headers: githubHeaders(),
+          params: { ref: branch }
+        });
+
+        shaImagen = existente.data.sha;
+
+      } catch (error) {
+        if (error.response?.status !== 404) {
+          throw error;
+        }
+      }
+
+      const respuesta = await axios.put(
+        url,
+        {
+          message: `Guardar imagen del vocablo ${id}`,
+          content: buffer.toString('base64'),
+          branch,
+          ...(shaImagen ? { sha: shaImagen } : {})
+        },
+        {
+          headers: githubHeaders()
+        }
+      );
+
+      const versionImagen = respuesta.data.commit?.sha;
+
+      if (
+        !versionImagen ||
+        !/^[a-f0-9]{40}$/i.test(versionImagen)
+      ) {
+        throw new Error(
+          'GitHub no devolvió un SHA de commit válido para la imagen'
+        );
+      }
+
+      return {
+        versionImagen,
+        shaImagen: respuesta.data.content?.sha
+      };
+
+    } catch (error) {
+      if (!esConflictoGitHub(error) || intento === maxIntentos) {
+        throw error;
+      }
+
+      console.warn(
+        `Conflicto al subir imagen. Reintento ${intento}/${maxIntentos}`,
+        error.response?.data || error.message
+      );
+
+      await esperar(150 * intento + Math.floor(Math.random() * 100));
+    }
+  }
+
+  throw new Error(
+    'No fue posible guardar la imagen después de varios intentos'
+  );
+}
+
+// ==========================================
 // B. BASE64 Y VALIDACIÓN DE AUDIO
 // ==========================================
 
@@ -418,7 +671,6 @@ function validarFirmaAudio(buffer, extension) {
 
   return Boolean(firmas[extension]);
 }
-
 // ==========================================
 // C. SUBIR O REEMPLAZAR AUDIO CON REINTENTOS
 // ==========================================
@@ -658,596 +910,748 @@ app.post('/diccionario/:id/audio', async (req, res) => {
 });
 
 // ==========================================
-// REPRODUCIR AUDIO
+// GUARDAR IMAGEN DEL DICCIONARIO
 // ==========================================
 
-app.get('/diccionario/:id/audio', async (req, res) => {
+app.post('/diccionario/:id/imagen', async (req, res) => {
+  let etapa = 'inicio';
 
   try {
-
     const { id } = req.params;
+    const { variante, agrupacion } = req.query;
+    const { imagenBase64, mimeType } = req.body;
 
-    const {
-      variante,
-      agrupacion,
-      formato,
-      version
-    } = req.query;
-
-    const nombreAgrupacion =
-      agrupaciones[Number(agrupacion)];
-
-    if (!nombreAgrupacion || !variante || !id) {
+    if (!id || !variante || !agrupacion || !imagenBase64) {
       return res.status(400).json({
-        error: 'Parámetros incompletos'
+        error: 'Faltan datos de la imagen o del vocablo'
       });
     }
 
-    let referenciaGitHub = branch;
-
-    if (version !== undefined) {
-
-      if (
-        typeof version !== 'string' ||
-        !/^[a-f0-9]{40}$/i.test(version)
-      ) {
-        return res.status(400).json({
-          error: 'Versión del audio no válida'
-        });
-      }
-
-      referenciaGitHub = version;
-    }
-
-    const disponibles = ['webm', 'm4a', 'ogg', 'mp3', 'wav'];
-
-    const solicitado = String(formato || '').toLowerCase();
-
-    if (solicitado && !disponibles.includes(solicitado)) {
+    // Evitar que parámetros se utilicen para construir rutas arbitrarias.
+    if (!/^\d+$/.test(String(id)) || !/^\d+$/.test(String(variante))) {
       return res.status(400).json({
-        error: 'Formato no válido'
+        error: 'El identificador o la variante no son válidos'
       });
     }
 
-    const extensiones = solicitado
-      ? [
-          solicitado,
-          ...disponibles.filter(e => e !== solicitado)
-        ]
-      : disponibles;
+    const nombreAgrupacion = agrupaciones[Number(agrupacion)];
 
-    let audio = null;
-    let extensionEncontrada = null;
-
-    for (const extension of extensiones) {
-
-      const path =
-        `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
-
-      const url =
-        `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(referenciaGitHub)}/${path
-          .split('/')
-          .map(segment => encodeURIComponent(segment))
-          .join('/')}`;
-
-      try {
-
-        const respuesta = await axios.get(url, {
-          responseType: 'arraybuffer',
-          headers: {
-            'Cache-Control': 'no-cache'
-          },
-          validateStatus: status => status === 200
-        });
-
-        if (respuesta.data?.byteLength > 0) {
-          audio = Buffer.from(respuesta.data);
-          extensionEncontrada = extension;
-          break;
-        }
-
-      } catch (error) {
-
-        if (error.response?.status !== 404) {
-          throw error;
-        }
-      }
-    }
-
-    if (!audio) {
-      return res.status(404).json({
-        error: 'Audio no encontrado'
-      });
-    }
-
-    const tamano = audio.length;
-    const range = req.headers.range;
-
-    res.set({
-      'Content-Type': tiposMime[extensionEncontrada],
-      'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-      'X-Content-Type-Options': 'nosniff'
-    });
-
-    if (range) {
-
-      const coincidencia = /^bytes=(\d*)-(\d*)$/.exec(range);
-
-      if (!coincidencia) {
-        return res.status(416)
-          .set('Content-Range', `bytes */${tamano}`)
-          .end();
-      }
-
-      let inicio;
-      let fin;
-
-      if (coincidencia[1] === '') {
-
-        const cantidad = Number(coincidencia[2]);
-
-        if (!cantidad || cantidad <= 0) {
-          return res.status(416)
-            .set('Content-Range', `bytes */${tamano}`)
-            .end();
-        }
-
-        inicio = Math.max(0, tamano - cantidad);
-        fin = tamano - 1;
-
-      } else {
-
-        inicio = Number(coincidencia[1]);
-        fin = coincidencia[2]
-          ? Number(coincidencia[2])
-          : tamano - 1;
-      }
-
-      if (
-        !Number.isSafeInteger(inicio) ||
-        !Number.isSafeInteger(fin) ||
-        inicio < 0 ||
-        inicio >= tamano ||
-        fin < inicio
-      ) {
-        return res.status(416)
-          .set('Content-Range', `bytes */${tamano}`)
-          .end();
-      }
-
-      fin = Math.min(fin, tamano - 1);
-
-      const fragmento = audio.subarray(inicio, fin + 1);
-
-      res.status(206);
-
-      res.set({
-        'Content-Length': fragmento.length,
-        'Content-Range': `bytes ${inicio}-${fin}/${tamano}`
-      });
-
-      return res.end(fragmento);
-    }
-
-    res.set('Content-Length', tamano);
-
-    return res.status(200).end(audio);
-
-  } catch (error) {
-
-    console.error(
-      'ERROR AL REPRODUCIR AUDIO:',
-      error.response?.data || error.message
-    );
-
-    return res.status(500).json({
-      error: 'No fue posible recuperar el audio',
-      detalle: error.message
-    });
-  }
-});
-
-// ==========================================
-// RECUPERAR AUDIOS EXISTENTES
-// ==========================================
-
-async function recuperarAudiosExistentes(agrupacion) {
-
-  const nombreAgrupacion =
-    agrupaciones[Number(agrupacion)];
-
-  if (!nombreAgrupacion) {
-    throw new Error('Agrupación no válida');
-  }
-
-  const { data, sha, path } =
-    await obtenerArchivo('diccionario', agrupacion, true);
-
-  const variantes = [
-    ...new Set(
-      data.map(item => String(item.idDiccionario || ''))
-        .filter(Boolean)
-    )
-  ];
-
-  const archivos = {};
-
-  for (const variante of variantes) {
-
-    const carpeta =
-      `audios/${nombreAgrupacion}/${variante}`;
-
-    archivos[variante] = {};
-
-    try {
-
-      const respuesta = await axios.get(
-        githubContentsUrl(carpeta),
-        {
-          headers: githubHeaders(),
-          params: { ref: branch }
-        }
-      );
-
-      if (!Array.isArray(respuesta.data)) {
-        continue;
-      }
-
-      for (const archivo of respuesta.data) {
-
-        if (archivo.type !== 'file') continue;
-
-        const match = archivo.name.match(
-          /^(\d+)\.(webm|m4a|ogg|mp3|wav)$/i
-        );
-
-        if (!match) continue;
-
-        const id = match[1];
-        const extension = match[2].toLowerCase();
-
-        if (!archivos[variante][id]) {
-          archivos[variante][id] = extension;
-        }
-      }
-
-    } catch (error) {
-
-      if (error.response?.status !== 404) {
-        throw error;
-      }
-    }
-  }
-
-  let recuperados = 0;
-
-  for (const item of data) {
-
-    const variante = String(item.idDiccionario);
-    const id = String(item.idPalabra);
-
-    const extension = archivos[variante]?.[id];
-
-    if (!extension) continue;
-
-    item.audioUrl =
-      `${BASE_URL}/diccionario/${encodeURIComponent(id)}/audio` +
-      `?variante=${encodeURIComponent(variante)}` +
-      `&agrupacion=${encodeURIComponent(agrupacion)}` +
-      `&formato=${encodeURIComponent(extension)}`;
-
-    recuperados++;
-  }
-
-  if (recuperados > 0) {
-
-    const respuesta = await guardarArchivoGitHub(
-      path,
-      data,
-      sha,
-      `Recuperar audios de ${nombreAgrupacion}`
-    );
-
-    cacheData[`diccionario_${agrupacion}`] = data;
-    cacheSHA[`diccionario_${agrupacion}`] =
-      respuesta.content.sha;
-  }
-
-  return {
-    agrupacion: nombreAgrupacion,
-    registros: data.length,
-    recuperados
-  };
-}
-
-app.post('/recuperar-audios/:agrupacion', async (req, res) => {
-
-  try {
-
-    const configurada = process.env.AUDIO_RECOVERY_SECRET;
-    const recibida = req.headers['x-recovery-secret'];
-
-    if (!configurada) {
-      return res.status(500).json({
-        error: 'Falta configurar AUDIO_RECOVERY_SECRET'
-      });
-    }
-
-    if (
-      typeof recibida !== 'string' ||
-      Buffer.byteLength(recibida) !== Buffer.byteLength(configurada) ||
-      !crypto.timingSafeEqual(
-        Buffer.from(recibida),
-        Buffer.from(configurada)
-      )
-    ) {
-      return res.status(401).json({
-        error: 'No autorizado'
-      });
-    }
-
-    const agrupacion = Number(req.params.agrupacion);
-
-    if (![1, 2].includes(agrupacion)) {
+    if (!nombreAgrupacion) {
       return res.status(400).json({
         error: 'Agrupación no válida'
       });
     }
 
-    const resultado =
-      await recuperarAudiosExistentes(agrupacion);
+    const tipoImagen = String(mimeType || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
 
-    return res.json({
-      mensaje: 'Recuperación completada',
-      resultado
-    });
+    const extension = extensionesImagen[tipoImagen];
 
-  } catch (error) {
-
-    console.error('ERROR RECUPERACIÓN:', error.message);
-
-    return res.status(500).json({
-      error: error.message
-    });
-  }
-});
-
-// ==========================================
-// LOGIN
-// ==========================================
-
-app.post('/login', async (req, res) => {
-
-  try {
-
-    const { correoElectronico, contraseña } = req.body;
-
-    if (!correoElectronico || !contraseña) {
+    if (!extension) {
       return res.status(400).json({
-        error: 'Faltan credenciales'
+        error: 'Formato de imagen no compatible. Utiliza JPG, PNG, WEBP o GIF',
+        mimeType
       });
     }
 
-    const { data } = await obtenerArchivo('usuarios', 0, true);
+    etapa = 'validación de la imagen';
 
-    const usuario = data.find(u =>
-      u.correoElectronico === correoElectronico
-    );
+    const buffer = convertirBase64Imagen(imagenBase64);
 
-    if (!usuario) {
-      return res.status(401).json({
-        error: 'Usuario no encontrado'
+    if (buffer.length < 16) {
+      return res.status(400).json({
+        error: 'La imagen está vacía o incompleta'
       });
     }
 
-    const valido = await bcrypt.compare(
-      contraseña,
-      usuario.contraseña
-    );
-
-    if (!valido) {
-      return res.status(401).json({
-        error: 'Contraseña incorrecta'
+    // Límite de 5 MB por imagen.
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(413).json({
+        error: 'La imagen supera el límite de 5 MB'
       });
     }
 
-    if (!process.env.JWT_SECRET) {
-      throw new Error('Falta configurar JWT_SECRET');
+    if (!validarFirmaImagen(buffer, extension)) {
+      return res.status(400).json({
+        error: 'El contenido no corresponde al formato de imagen declarado',
+        formato: tipoImagen
+      });
     }
 
-    const token = jwt.sign(
-      {
-        correoElectronico: usuario.correoElectronico,
-        rol: usuario.rol
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '8h' }
-    );
+    const imagenPath =
+      `imagenes/${nombreAgrupacion}/${variante}/${id}.${extension}`;
 
-    return res.json({
-      mensaje: 'Login exitoso',
-      token,
-      usuario: {
-        nombre: usuario.nombre,
-        correoElectronico: usuario.correoElectronico,
-        rol: usuario.rol,
-        activo: usuario.activo
+    console.log('IMAGEN RECIBIDA:', {
+      id,
+      variante,
+      agrupacion,
+      extension,
+      bytes: buffer.length
+    });
+
+    // 1. Guardar la imagen en GitHub.
+    etapa = 'subida de la imagen';
+
+    const resultadoImagen = await subirImagenGitHub({
+      imagenPath,
+      buffer,
+      id
+    });
+        // 2. Crear una URL inmutable vinculada al commit de la imagen.
+        etapa = 'generación de imagenUrl';
+
+        const rutaCodificada = imagenPath
+          .split('/')
+          .map(segment => encodeURIComponent(segment))
+          .join('/');
+    
+        const imagenUrl =
+          `https://raw.githubusercontent.com/${owner}/${repo}/` +
+          `${resultadoImagen.versionImagen}/${rutaCodificada}`;
+    
+        // 3. Actualizar imagenUrl en el registro del diccionario.
+        etapa = 'actualización segura del diccionario';
+    
+        const resultadoJSON = await actualizarImagenEnDiccionario({
+          agrupacion,
+          variante,
+          id,
+          imagenUrl,
+          maxIntentos: 5
+        });
+    
+        console.log('========== IMAGEN GUARDADA ==========');
+    
+        console.log({
+          id,
+          variante,
+          agrupacion,
+          bytes: buffer.length,
+          versionImagen: resultadoImagen.versionImagen,
+          archivoJSON: resultadoJSON.path
+        });
+    
+        return res.json({
+          mensaje: 'Imagen y imagenUrl guardadas correctamente',
+          imagenUrl,
+          versionImagen: resultadoImagen.versionImagen,
+          archivoJSON: resultadoJSON.path,
+          bytes: buffer.length,
+          guardadoGitHub: true
+        });
+    
+      } catch (error) {
+        console.error('ERROR AL GUARDAR IMAGEN:', {
+          etapa,
+          mensaje: error.message,
+          status: error.response?.status,
+          github: error.response?.data
+        });
+    
+        return res.status(
+          esConflictoGitHub(error) ? 409 : 500
+        ).json({
+          error: 'No fue posible completar el guardado de la imagen',
+          etapa,
+          detalle:
+            error.response?.data?.message ||
+            error.message,
+          codigoGitHub: error.response?.status || null
+        });
       }
     });
-
-  } catch (error) {
-
-    console.error('ERROR LOGIN:', error.message);
-
-    return res.status(500).json({
-      error: error.message
+    
+    // ==========================================
+    // REPRODUCIR AUDIO
+    // ==========================================
+    
+    app.get('/diccionario/:id/audio', async (req, res) => {
+    
+      try {
+    
+        const { id } = req.params;
+    
+        const {
+          variante,
+          agrupacion,
+          formato,
+          version
+        } = req.query;
+    
+        const nombreAgrupacion =
+          agrupaciones[Number(agrupacion)];
+    
+        if (!nombreAgrupacion || !variante || !id) {
+          return res.status(400).json({
+            error: 'Parámetros incompletos'
+          });
+        }
+    
+        let referenciaGitHub = branch;
+    
+        if (version !== undefined) {
+    
+          if (
+            typeof version !== 'string' ||
+            !/^[a-f0-9]{40}$/i.test(version)
+          ) {
+            return res.status(400).json({
+              error: 'Versión del audio no válida'
+            });
+          }
+    
+          referenciaGitHub = version;
+        }
+    
+        const disponibles = ['webm', 'm4a', 'ogg', 'mp3', 'wav'];
+    
+        const solicitado = String(formato || '').toLowerCase();
+    
+        if (solicitado && !disponibles.includes(solicitado)) {
+          return res.status(400).json({
+            error: 'Formato no válido'
+          });
+        }
+    
+        const extensiones = solicitado
+          ? [
+              solicitado,
+              ...disponibles.filter(e => e !== solicitado)
+            ]
+          : disponibles;
+    
+        let audio = null;
+        let extensionEncontrada = null;
+    
+        for (const extension of extensiones) {
+    
+          const path =
+            `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
+    
+          const url =
+            `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(referenciaGitHub)}/${path
+              .split('/')
+              .map(segment => encodeURIComponent(segment))
+              .join('/')}`;
+    
+          try {
+    
+            const respuesta = await axios.get(url, {
+              responseType: 'arraybuffer',
+              headers: {
+                'Cache-Control': 'no-cache'
+              },
+              validateStatus: status => status === 200
+            });
+    
+            if (respuesta.data?.byteLength > 0) {
+              audio = Buffer.from(respuesta.data);
+              extensionEncontrada = extension;
+              break;
+            }
+    
+          } catch (error) {
+    
+            if (error.response?.status !== 404) {
+              throw error;
+            }
+          }
+        }
+    
+        if (!audio) {
+          return res.status(404).json({
+            error: 'Audio no encontrado'
+          });
+        }
+    
+        const tamano = audio.length;
+        const range = req.headers.range;
+    
+        res.set({
+          'Content-Type': tiposMime[extensionEncontrada],
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'X-Content-Type-Options': 'nosniff'
+        });
+    
+        if (range) {
+    
+          const coincidencia = /^bytes=(\d*)-(\d*)$/.exec(range);
+    
+          if (!coincidencia) {
+            return res.status(416)
+              .set('Content-Range', `bytes */${tamano}`)
+              .end();
+          }
+    
+          let inicio;
+          let fin;
+    
+          if (coincidencia[1] === '') {
+    
+            const cantidad = Number(coincidencia[2]);
+    
+            if (!cantidad || cantidad <= 0) {
+              return res.status(416)
+                .set('Content-Range', `bytes */${tamano}`)
+                .end();
+            }
+    
+            inicio = Math.max(0, tamano - cantidad);
+            fin = tamano - 1;
+    
+          } else {
+    
+            inicio = Number(coincidencia[1]);
+            fin = coincidencia[2]
+              ? Number(coincidencia[2])
+              : tamano - 1;
+          }
+    
+          if (
+            !Number.isSafeInteger(inicio) ||
+            !Number.isSafeInteger(fin) ||
+            inicio < 0 ||
+            inicio >= tamano ||
+            fin < inicio
+          ) {
+            return res.status(416)
+              .set('Content-Range', `bytes */${tamano}`)
+              .end();
+          }
+    
+          fin = Math.min(fin, tamano - 1);
+    
+          const fragmento = audio.subarray(inicio, fin + 1);
+    
+          res.status(206);
+    
+          res.set({
+            'Content-Length': fragmento.length,
+            'Content-Range': `bytes ${inicio}-${fin}/${tamano}`
+          });
+    
+          return res.end(fragmento);
+        }
+    
+        res.set('Content-Length', tamano);
+    
+        return res.status(200).end(audio);
+    
+      } catch (error) {
+    
+        console.error(
+          'ERROR AL REPRODUCIR AUDIO:',
+          error.response?.data || error.message
+        );
+    
+        return res.status(500).json({
+          error: 'No fue posible recuperar el audio',
+          detalle: error.message
+        });
+      }
     });
-  }
-});
-
-// ==========================================
-// REGISTRO DE USUARIOS
-// ==========================================
-
-app.post('/usuarios', async (req, res) => {
-
-  try {
-
-    const {
-      nombre,
-      correoElectronico,
-      contraseña,
-      rol
-    } = req.body;
-
-    if (!nombre || !correoElectronico || !contraseña) {
-      return res.status(400).json({
-        error: 'Faltan datos'
-      });
+    
+    // ==========================================
+    // RECUPERAR AUDIOS EXISTENTES
+    // ==========================================
+    
+    async function recuperarAudiosExistentes(agrupacion) {
+    
+      const nombreAgrupacion =
+        agrupaciones[Number(agrupacion)];
+    
+      if (!nombreAgrupacion) {
+        throw new Error('Agrupación no válida');
+      }
+    
+      const { data, sha, path } =
+        await obtenerArchivo('diccionario', agrupacion, true);
+    
+      const variantes = [
+        ...new Set(
+          data.map(item => String(item.idDiccionario || ''))
+            .filter(Boolean)
+        )
+      ];
+    
+      const archivos = {};
+    
+      for (const variante of variantes) {
+    
+        const carpeta =
+          `audios/${nombreAgrupacion}/${variante}`;
+    
+        archivos[variante] = {};
+    
+        try {
+    
+          const respuesta = await axios.get(
+            githubContentsUrl(carpeta),
+            {
+              headers: githubHeaders(),
+              params: { ref: branch }
+            }
+          );
+    
+          if (!Array.isArray(respuesta.data)) {
+            continue;
+          }
+    
+          for (const archivo of respuesta.data) {
+    
+            if (archivo.type !== 'file') continue;
+    
+            const match = archivo.name.match(
+              /^(\d+)\.(webm|m4a|ogg|mp3|wav)$/i
+            );
+    
+            if (!match) continue;
+    
+            const id = match[1];
+            const extension = match[2].toLowerCase();
+    
+            if (!archivos[variante][id]) {
+              archivos[variante][id] = extension;
+            }
+          }
+    
+        } catch (error) {
+    
+          if (error.response?.status !== 404) {
+            throw error;
+          }
+        }
+      }
+    
+      let recuperados = 0;
+    
+      for (const item of data) {
+    
+        const variante = String(item.idDiccionario);
+        const id = String(item.idPalabra);
+    
+        const extension = archivos[variante]?.[id];
+    
+        if (!extension) continue;
+    
+        item.audioUrl =
+          `${BASE_URL}/diccionario/${encodeURIComponent(id)}/audio` +
+          `?variante=${encodeURIComponent(variante)}` +
+          `&agrupacion=${encodeURIComponent(agrupacion)}` +
+          `&formato=${encodeURIComponent(extension)}`;
+    
+        recuperados++;
+      }
+    
+      if (recuperados > 0) {
+    
+        const respuesta = await guardarArchivoGitHub(
+          path,
+          data,
+          sha,
+          `Recuperar audios de ${nombreAgrupacion}`
+        );
+    
+        cacheData[`diccionario_${agrupacion}`] = data;
+        cacheSHA[`diccionario_${agrupacion}`] =
+          respuesta.content.sha;
+      }
+    
+      return {
+        agrupacion: nombreAgrupacion,
+        registros: data.length,
+        recuperados
+      };
     }
+    app.post('/recuperar-audios/:agrupacion', async (req, res) => {
 
-    const { data, sha, path } =
-      await obtenerArchivo('usuarios', 0, true);
-
-    if (data.some(u =>
-      u.correoElectronico === correoElectronico
-    )) {
-      return res.status(409).json({
-        error: 'El usuario ya existe'
-      });
-    }
-
-    const hash = await bcrypt.hash(contraseña, 10);
-
-    data.push({
-      nombre,
-      correoElectronico,
-      contraseña: hash,
-      rol: rol || 'usuario',
-      activo: false
+      try {
+    
+        const configurada = process.env.AUDIO_RECOVERY_SECRET;
+        const recibida = req.headers['x-recovery-secret'];
+    
+        if (!configurada) {
+          return res.status(500).json({
+            error: 'Falta configurar AUDIO_RECOVERY_SECRET'
+          });
+        }
+    
+        if (
+          typeof recibida !== 'string' ||
+          Buffer.byteLength(recibida) !== Buffer.byteLength(configurada) ||
+          !crypto.timingSafeEqual(
+            Buffer.from(recibida),
+            Buffer.from(configurada)
+          )
+        ) {
+          return res.status(401).json({
+            error: 'No autorizado'
+          });
+        }
+    
+        const agrupacion = Number(req.params.agrupacion);
+    
+        if (![1, 2].includes(agrupacion)) {
+          return res.status(400).json({
+            error: 'Agrupación no válida'
+          });
+        }
+    
+        const resultado =
+          await recuperarAudiosExistentes(agrupacion);
+    
+        return res.json({
+          mensaje: 'Recuperación completada',
+          resultado
+        });
+    
+      } catch (error) {
+    
+        console.error('ERROR RECUPERACIÓN:', error.message);
+    
+        return res.status(500).json({
+          error: error.message
+        });
+      }
     });
-
-    const respuesta = await guardarArchivoGitHub(
-      path,
-      data,
-      sha,
-      'Nuevo usuario'
-    );
-
-    cacheData.usuarios_0 = data;
-    cacheSHA.usuarios_0 = respuesta.content.sha;
-
-    return res.json({
-      mensaje: 'Usuario creado correctamente'
+    
+    // ==========================================
+    // LOGIN
+    // ==========================================
+    
+    app.post('/login', async (req, res) => {
+    
+      try {
+    
+        const { correoElectronico, contraseña } = req.body;
+    
+        if (!correoElectronico || !contraseña) {
+          return res.status(400).json({
+            error: 'Faltan credenciales'
+          });
+        }
+    
+        const { data } = await obtenerArchivo('usuarios', 0, true);
+    
+        const usuario = data.find(u =>
+          u.correoElectronico === correoElectronico
+        );
+    
+        if (!usuario) {
+          return res.status(401).json({
+            error: 'Usuario no encontrado'
+          });
+        }
+    
+        const valido = await bcrypt.compare(
+          contraseña,
+          usuario.contraseña
+        );
+    
+        if (!valido) {
+          return res.status(401).json({
+            error: 'Contraseña incorrecta'
+          });
+        }
+    
+        if (!process.env.JWT_SECRET) {
+          throw new Error('Falta configurar JWT_SECRET');
+        }
+    
+        const token = jwt.sign(
+          {
+            correoElectronico: usuario.correoElectronico,
+            rol: usuario.rol
+          },
+          process.env.JWT_SECRET,
+          { expiresIn: '8h' }
+        );
+    
+        return res.json({
+          mensaje: 'Login exitoso',
+          token,
+          usuario: {
+            nombre: usuario.nombre,
+            correoElectronico: usuario.correoElectronico,
+            rol: usuario.rol,
+            activo: usuario.activo
+          }
+        });
+    
+      } catch (error) {
+    
+        console.error('ERROR LOGIN:', error.message);
+    
+        return res.status(500).json({
+          error: error.message
+        });
+      }
     });
-
-  } catch (error) {
-
-    console.error('ERROR REGISTRO:', error.message);
-
-    return res.status(500).json({
-      error: error.message
+    
+    // ==========================================
+    // REGISTRO DE USUARIOS
+    // ==========================================
+    
+    app.post('/usuarios', async (req, res) => {
+    
+      try {
+    
+        const {
+          nombre,
+          correoElectronico,
+          contraseña,
+          rol
+        } = req.body;
+    
+        if (!nombre || !correoElectronico || !contraseña) {
+          return res.status(400).json({
+            error: 'Faltan datos'
+          });
+        }
+    
+        const { data, sha, path } =
+          await obtenerArchivo('usuarios', 0, true);
+    
+        if (data.some(u =>
+          u.correoElectronico === correoElectronico
+        )) {
+          return res.status(409).json({
+            error: 'El usuario ya existe'
+          });
+        }
+    
+        const hash = await bcrypt.hash(contraseña, 10);
+    
+        data.push({
+          nombre,
+          correoElectronico,
+          contraseña: hash,
+          rol: rol || 'usuario',
+          activo: false
+        });
+    
+        const respuesta = await guardarArchivoGitHub(
+          path,
+          data,
+          sha,
+          'Nuevo usuario'
+        );
+    
+        cacheData.usuarios_0 = data;
+        cacheSHA.usuarios_0 = respuesta.content.sha;
+    
+        return res.json({
+          mensaje: 'Usuario creado correctamente'
+        });
+    
+      } catch (error) {
+    
+        console.error('ERROR REGISTRO:', error.message);
+    
+        return res.status(500).json({
+          error: error.message
+        });
+      }
     });
-  }
-});
-
-// ==========================================
-// ACTUALIZAR USUARIO
-// ==========================================
-
-app.put('/usuarios/:correo', async (req, res) => {
-
-  try {
-
-    const { correo } = req.params;
-
-    const { data, sha, path } =
-      await obtenerArchivo('usuarios', 0, true);
-
-    const index = data.findIndex(
-      u => u.correoElectronico === correo
-    );
-
-    if (index === -1) {
-      return res.status(404).json({
-        error: 'Usuario no encontrado'
-      });
-    }
-
-    data[index] = {
-      ...data[index],
-      ...req.body
-    };
-
-    const respuesta = await guardarArchivoGitHub(
-      path,
-      data,
-      sha,
-      `Actualizar usuario ${correo}`
-    );
-
-    cacheData.usuarios_0 = data;
-    cacheSHA.usuarios_0 = respuesta.content.sha;
-
-    return res.json({
-      mensaje: 'Usuario actualizado'
+    
+    // ==========================================
+    // ACTUALIZAR USUARIO
+    // ==========================================
+    
+    app.put('/usuarios/:correo', async (req, res) => {
+    
+      try {
+    
+        const { correo } = req.params;
+    
+        const { data, sha, path } =
+          await obtenerArchivo('usuarios', 0, true);
+    
+        const index = data.findIndex(
+          u => u.correoElectronico === correo
+        );
+    
+        if (index === -1) {
+          return res.status(404).json({
+            error: 'Usuario no encontrado'
+          });
+        }
+    
+        data[index] = {
+          ...data[index],
+          ...req.body
+        };
+    
+        const respuesta = await guardarArchivoGitHub(
+          path,
+          data,
+          sha,
+          `Actualizar usuario ${correo}`
+        );
+    
+        cacheData.usuarios_0 = data;
+        cacheSHA.usuarios_0 = respuesta.content.sha;
+    
+        return res.json({
+          mensaje: 'Usuario actualizado'
+        });
+    
+      } catch (error) {
+    
+        console.error('ERROR ACTUALIZAR USUARIO:', error.message);
+    
+        return res.status(500).json({
+          error: error.message
+        });
+      }
     });
-
-  } catch (error) {
-
-    console.error('ERROR ACTUALIZAR USUARIO:', error.message);
-
-    return res.status(500).json({
-      error: error.message
+    
+    // ==========================================
+    // ELIMINAR USUARIO
+    // ==========================================
+    
+    app.delete('/usuarios/:correo', async (req, res) => {
+    
+      try {
+    
+        const { correo } = req.params;
+    
+        const { data, sha, path } =
+          await obtenerArchivo('usuarios', 0, true);
+    
+        const nuevoArray = data.filter(
+          u => u.correoElectronico !== correo
+        );
+    
+        const respuesta = await guardarArchivoGitHub(
+          path,
+          nuevoArray,
+          sha,
+          `Eliminar usuario ${correo}`
+        );
+    
+        cacheData.usuarios_0 = nuevoArray;
+        cacheSHA.usuarios_0 = respuesta.content.sha;
+    
+        return res.json({
+          mensaje: 'Usuario eliminado'
+        });
+    
+      } catch (error) {
+    
+        console.error('ERROR ELIMINAR USUARIO:', error.message);
+    
+        return res.status(500).json({
+          error: error.message
+        });
+      }
     });
-  }
-});
-
-// ==========================================
-// ELIMINAR USUARIO
-// ==========================================
-
-app.delete('/usuarios/:correo', async (req, res) => {
-
-  try {
-
-    const { correo } = req.params;
-
-    const { data, sha, path } =
-      await obtenerArchivo('usuarios', 0, true);
-
-    const nuevoArray = data.filter(
-      u => u.correoElectronico !== correo
-    );
-
-    const respuesta = await guardarArchivoGitHub(
-      path,
-      nuevoArray,
-      sha,
-      `Eliminar usuario ${correo}`
-    );
-
-    cacheData.usuarios_0 = nuevoArray;
-    cacheSHA.usuarios_0 = respuesta.content.sha;
-
-    return res.json({
-      mensaje: 'Usuario eliminado'
-    });
-
-  } catch (error) {
-
-    console.error('ERROR ELIMINAR USUARIO:', error.message);
-
-    return res.status(500).json({
-      error: error.message
-    });
-  }
-});
-
-// ==========================================
+    // ==========================================
 // CREAR REGISTRO EN DICCIONARIO O CORPUS
 // ==========================================
 
@@ -1483,6 +1887,11 @@ app.get('/:tipo', async (req, res) => {
           typeof item.audioUrl === 'string' &&
           item.audioUrl.trim()
             ? item.audioUrl.trim()
+            : null,
+        imagenUrl:
+          typeof item.imagenUrl === 'string' &&
+          item.imagenUrl.trim()
+            ? item.imagenUrl.trim()
             : null
       }));
     }
@@ -1582,4 +1991,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`UMAR Multilingua activo en puerto ${PORT}`);
 });
-
