@@ -42872,5 +42872,18 @@
     "audioUrl": null,
     "imagenUrl": null,
     "aceptado": 1
+  },
+  {
+    "idPalabra": "33070",
+    "idDiccionario": "8",
+    "nombrePalabra": "yyyy",
+    "lexema": "yyyy",
+    "gramema": "yyyy",
+    "estatus": "yyyy",
+    "categoriaGramatical": "yyyy",
+    "traduccion": "yyyy",
+    "audioUrl": null,
+    "imagenUrl": null,
+    "aceptado": 0
   }
 ]
