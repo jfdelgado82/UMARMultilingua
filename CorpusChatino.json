@@ -13838,5 +13838,15 @@
     "estatus": "5555",
     "multimedia": "5555",
     "traduccion": "5555"
+  },
+  {
+    "idExpresion": "7178",
+    "idCorpus": "6",
+    "expresion": "aaaaaaa",
+    "estatus": "",
+    "traduccion": "asdadasdasdas",
+    "audioUrl": null,
+    "imagenUrl": null,
+    "aceptado": 0
   }
 ]
