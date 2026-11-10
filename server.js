@@ -42,6 +42,7 @@ const rutas = {
 const cacheData = {};
 const cacheSHA = {};
 const cacheSHAImagenes = new Map();
+const cacheSHAAudios = new Map();
 
 const agrupaciones = {
   1: 'zapoteco',
@@ -258,6 +259,89 @@ async function guardarArchivoGitHub(path, data, sha, mensaje) {
   return response.data;
 }
 
+
+// ==========================================
+// ACTUALIZACIÓN SEGURA Y OPTIMIZADA DE JSON
+// ==========================================
+
+// Usa la caché como primera opción. Si GitHub rechaza el SHA por
+// concurrencia (409/422), vuelve a leer el JSON y reaplica el cambio.
+// Nunca modifica cacheData antes de que GitHub confirme el PUT.
+async function actualizarArchivoSeguro({
+  tipo,
+  agrupacion,
+  modificar,
+  mensaje,
+  maxIntentos = 5,
+  resultadoInicial = null
+}) {
+  const cacheKey = `${tipo}_${agrupacion || 0}`;
+  let resultadoPendiente = resultadoInicial;
+
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    try {
+      const actual = resultadoPendiente ||
+        await obtenerArchivo(tipo, agrupacion, intento > 1);
+
+      // Una lectura anticipada solo se consume en el primer intento.
+      resultadoPendiente = null;
+
+      // Copia superficial: los endpoints modifican registros por
+      // sustitución, sin mutar objetos de la caché original.
+      const datosActualizados = [...actual.data];
+
+      const resultadoModificacion = await modificar(datosActualizados);
+
+      const respuesta = await guardarArchivoGitHub(
+        actual.path,
+        datosActualizados,
+        actual.sha,
+        mensaje
+      );
+
+      if (!respuesta.content?.sha) {
+        throw new Error(`GitHub no confirmó la actualización de ${actual.path}`);
+      }
+
+      // Publicar la nueva versión en caché solo tras el commit confirmado.
+      cacheData[cacheKey] = datosActualizados;
+      cacheSHA[cacheKey] = respuesta.content.sha;
+
+      console.log('ACTUALIZACIÓN JSON CONFIRMADA:', {
+        tipo,
+        agrupacion,
+        intento,
+        registros: datosActualizados.length,
+        sha: respuesta.content.sha
+      });
+
+      return {
+        data: datosActualizados,
+        path: actual.path,
+        sha: respuesta.content.sha,
+        resultado: resultadoModificacion,
+        intento
+      };
+
+    } catch (error) {
+      // Errores de validación del modificador (404/409 de negocio)
+      // no deben provocar reintentos de GitHub.
+      if (error.statusCode || !esConflictoGitHub(error) || intento === maxIntentos) {
+        throw error;
+      }
+
+      console.warn(
+        `Conflicto GitHub al actualizar ${tipo}. Reintento ${intento}/${maxIntentos}`,
+        error.response?.data || error.message
+      );
+
+      await esperar(150 * intento + Math.floor(Math.random() * 100));
+    }
+  }
+
+  throw new Error(`No fue posible actualizar ${tipo} después de varios intentos`);
+}
+
 // ==========================================
 // A. ACTUALIZACIÓN SEGURA DEL DICCIONARIO
 // ==========================================
@@ -273,84 +357,52 @@ async function actualizarAudioEnDiccionario({
   audioUrl,
   maxIntentos = 5
 }) {
-
-  const cacheKey = `diccionario_${agrupacion}`;
-
-  for (let intento = 1; intento <= maxIntentos; intento++) {
-
-    try {
-
-      // No usar la caché: necesitamos la versión más reciente.
-      const resultado = await obtenerArchivo(
-        'diccionario',
-        agrupacion,
-        true
-      );
-
-      const { data, sha, path } = resultado;
-
-      const index = data.findIndex(item =>
+  const actualizacion = await actualizarArchivoSeguro({
+    tipo: 'diccionario',
+    agrupacion,
+    mensaje: `Actualizar audioUrl del vocablo ${id}`,
+    maxIntentos,
+    modificar: datos => {
+      const index = datos.findIndex(item =>
         String(item.idPalabra) === String(id) &&
         String(item.idDiccionario) === String(variante)
       );
 
       if (index === -1) {
-        throw new Error(
+        const error = new Error(
           `No se encontró el vocablo ${id} en la variante ${variante}`
         );
-      }
-
-      // Modificar únicamente el registro solicitado.
-      data[index] = {
-        ...data[index],
-        audioUrl
-      };
-
-      const respuesta = await guardarArchivoGitHub(
-        path,
-        data,
-        sha,
-        `Actualizar audioUrl del vocablo ${id}`
-      );
-
-      cacheData[cacheKey] = data;
-      cacheSHA[cacheKey] = respuesta.content.sha;
-
-      console.log('JSON ACTUALIZADO:', {
-        id,
-        agrupacion,
-        variante,
-        intento,
-        sha: respuesta.content.sha
-      });
-
-      return {
-        path,
-        sha: respuesta.content.sha,
-        audioUrl
-      };
-
-    } catch (error) {
-
-      if (!esConflictoGitHub(error) || intento === maxIntentos) {
+        error.statusCode = 404;
         throw error;
       }
 
-      console.warn(
-        `Conflicto al actualizar diccionario. Reintento ${intento}/${maxIntentos}`,
-        error.response?.data || error.message
-      );
+      datos[index] = {
+        ...datos[index],
+        audioUrl
+      };
 
-      await esperar(150 * intento + Math.floor(Math.random() * 100));
+      return { index };
     }
-  }
+  });
 
-  throw new Error(
-    'No fue posible actualizar el diccionario después de varios intentos'
-  );
+  console.log('AUDIO URL ACTUALIZADA:', {
+    id,
+    agrupacion,
+    variante,
+    intento: actualizacion.intento,
+    sha: actualizacion.sha
+  });
+
+  return {
+    path: actualizacion.path,
+    sha: actualizacion.sha,
+    audioUrl
+  };
 }
 
+
 // ==========================================
+// ACTUALIZACIÓN SEGURA DE imagenUrl EN DICCIONARIO// ==========================================
 // ACTUALIZACIÓN SEGURA DE imagenUrl EN DICCIONARIO
 // ==========================================
 
@@ -363,100 +415,53 @@ async function actualizarImagenEnDiccionario({
   resultadoInicial = null,
   maxIntentos = 5
 }) {
-
-  const cacheKey = `diccionario_${agrupacion}`;
-
-  // Aprovechar la lectura anticipada cuando está disponible.
-  let resultadoPendiente = resultadoInicial;
-
-  for (let intento = 1; intento <= maxIntentos; intento++) {
-
-    try {
-
-      const resultado = resultadoPendiente ||
-        await obtenerArchivo(
-          'diccionario',
-          agrupacion,
-          true
-        );
-
-      // La lectura anticipada solamente se utiliza una vez.
-      resultadoPendiente = null;
-
-      const { data, sha, path } = resultado;
-
-      // Trabajar sobre una copia para no modificar la caché
-      // antes de confirmar el guardado en GitHub.
-      const datosActualizados = [...data];
-
-      const index = datosActualizados.findIndex(item =>
+  const actualizacion = await actualizarArchivoSeguro({
+    tipo: 'diccionario',
+    agrupacion,
+    mensaje: `Actualizar imagenUrl del vocablo ${id}`,
+    maxIntentos,
+    resultadoInicial,
+    modificar: datos => {
+      const index = datos.findIndex(item =>
         String(item.idPalabra) === String(id) &&
         String(item.idDiccionario) === String(variante)
       );
 
       if (index === -1) {
-        throw new Error(
+        const error = new Error(
           `No se encontró el vocablo ${id} en la variante ${variante}`
         );
-      }
-
-      datosActualizados[index] = {
-        ...datosActualizados[index],
-        imagenUrl
-      };
-
-      const respuesta = await guardarArchivoGitHub(
-        path,
-        datosActualizados,
-        sha,
-        `Actualizar imagenUrl del vocablo ${id}`
-      );
-
-      // Actualizar caché únicamente después de confirmar GitHub.
-      cacheData[cacheKey] = datosActualizados;
-      cacheSHA[cacheKey] = respuesta.content.sha;
-
-      console.log('IMAGEN URL ACTUALIZADA:', {
-        id,
-        agrupacion,
-        variante,
-        intento,
-        sha: respuesta.content.sha
-      });
-
-      return {
-        path,
-        sha: respuesta.content.sha,
-        imagenUrl
-      };
-
-    } catch (error) {
-
-      if (
-        !esConflictoGitHub(error) ||
-        intento === maxIntentos
-      ) {
+        error.statusCode = 404;
         throw error;
       }
 
-      console.warn(
-        `Conflicto al actualizar imagenUrl. Reintento ${intento}/${maxIntentos}`,
-        error.response?.data || error.message
-      );
+      datos[index] = {
+        ...datos[index],
+        imagenUrl
+      };
 
-      await esperar(
-        150 * intento + Math.floor(Math.random() * 100)
-      );
+      return { index };
     }
-  }
+  });
 
-  throw new Error(
-    'No fue posible actualizar imagenUrl después de varios intentos'
-  );
+  console.log('IMAGEN URL ACTUALIZADA:', {
+    id,
+    agrupacion,
+    variante,
+    intento: actualizacion.intento,
+    sha: actualizacion.sha
+  });
+
+  return {
+    path: actualizacion.path,
+    sha: actualizacion.sha,
+    imagenUrl
+  };
 }
 
 
 // ==========================================
+// VALIDACIÓN DE IMÁGENES// ==========================================
 // VALIDACIÓN DE IMÁGENES
 // ==========================================
 
@@ -855,33 +860,44 @@ async function subirAudioGitHub({
   id,
   maxIntentos = 5
 }) {
-
   validarTokenGitHub();
 
   const url = githubContentsUrl(audioPath);
+  const cacheKey = `${branch}:${audioPath}`;
+  const inicioTotal = Date.now();
+
+  let consultaGitHub = 0;
+  let escrituraGitHub = 0;
 
   for (let intento = 1; intento <= maxIntentos; intento++) {
+    let usoCache = false;
 
     try {
+      let shaAudio = cacheSHAAudios.get(cacheKey);
+      usoCache = Boolean(shaAudio);
 
-      let shaAudio;
+      if (!shaAudio) {
+        const inicioConsulta = Date.now();
 
-      try {
+        try {
+          const existente = await axios.get(url, {
+            headers: githubHeaders(),
+            params: { ref: branch }
+          });
+          shaAudio = existente.data.sha;
 
-        const existente = await axios.get(url, {
-          headers: githubHeaders(),
-          params: { ref: branch }
-        });
-
-        shaAudio = existente.data.sha;
-
-      } catch (error) {
-
-        if (error.response?.status !== 404) {
-          throw error;
+          if (!shaAudio) {
+            throw new Error('GitHub no devolvió el SHA del audio existente');
+          }
+        } catch (error) {
+          if (error.response?.status !== 404) throw error;
+          shaAudio = null;
         }
+
+        consultaGitHub += Date.now() - inicioConsulta;
       }
 
+      const inicioEscritura = Date.now();
       const respuesta = await axios.put(
         url,
         {
@@ -890,35 +906,45 @@ async function subirAudioGitHub({
           branch,
           ...(shaAudio ? { sha: shaAudio } : {})
         },
-        {
-          headers: githubHeaders()
-        }
+        { headers: githubHeaders() }
       );
+      escrituraGitHub += Date.now() - inicioEscritura;
 
       const versionAudio = respuesta.data.commit?.sha;
+      const nuevoSHA = respuesta.data.content?.sha;
 
-      if (
-        !versionAudio ||
-        !/^[a-f0-9]{40}$/i.test(versionAudio)
-      ) {
-        throw new Error(
-          'GitHub no devolvió un SHA de commit válido para el audio'
-        );
+      if (!versionAudio || !/^[a-f0-9]{40}$/i.test(versionAudio)) {
+        throw new Error('GitHub no devolvió un SHA de commit válido para el audio');
+      }
+      if (!nuevoSHA || !/^[a-f0-9]{40}$/i.test(nuevoSHA)) {
+        throw new Error('GitHub no devolvió un SHA válido para el archivo de audio');
       }
 
-      return {
-        versionAudio,
-        shaAudio: respuesta.data.content?.sha
-      };
+      cacheSHAAudios.set(cacheKey, nuevoSHA);
+
+      console.log('TIEMPOS SUBIDA AUDIO:', {
+        id,
+        intento,
+        usoCache,
+        consultaGitHub,
+        escrituraGitHub,
+        total: Date.now() - inicioTotal
+      });
+
+      return { versionAudio, shaAudio: nuevoSHA };
 
     } catch (error) {
+      const conflicto = esConflictoGitHub(error);
+      const shaCacheObsoleto = usoCache && error.response?.status === 404;
 
-      if (!esConflictoGitHub(error) || intento === maxIntentos) {
-        throw error;
-      }
+      if (!conflicto && !shaCacheObsoleto) throw error;
+
+      cacheSHAAudios.delete(cacheKey);
+
+      if (intento === maxIntentos) throw error;
 
       console.warn(
-        `Conflicto al subir audio. Reintento ${intento}/${maxIntentos}`,
+        `SHA de audio desactualizado. Reintento ${intento}/${maxIntentos}`,
         error.response?.data || error.message
       );
 
@@ -926,12 +952,11 @@ async function subirAudioGitHub({
     }
   }
 
-  throw new Error(
-    'No fue posible guardar el audio después de varios intentos'
-  );
+  throw new Error('No fue posible guardar el audio después de varios intentos');
 }
 
 // ==========================================
+// GUARDAR AUDIO DEL DICCIONARIO// ==========================================
 // GUARDAR AUDIO DEL DICCIONARIO
 // ==========================================
 
@@ -1196,7 +1221,7 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
     const promesaJSON = obtenerArchivo(
       'diccionario',
       agrupacion,
-      true
+      false
     ).then(resultado => {
 
       console.log('TIEMPO LECTURA JSON:', {
@@ -1890,164 +1915,87 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
 // CREAR REGISTRO EN DICCIONARIO O CORPUS
 // ==========================================
 
-// ==========================================
-// CREAR NUEVO REGISTRO
-// ==========================================
-
 app.post('/:tipo', async (req, res) => {
-
   try {
-
     const { tipo } = req.params;
     const { agrupacion } = req.query;
 
     if (!['diccionario', 'corpus'].includes(tipo)) {
-      return res.status(400).json({
-        error: 'Tipo no válido'
-      });
+      return res.status(400).json({ error: 'Tipo no válido' });
     }
 
     if (!agrupacion) {
-      return res.status(400).json({
-        error: 'Debe especificar una agrupación'
-      });
+      return res.status(400).json({ error: 'Debe especificar una agrupación' });
     }
 
-    // ==========================================
-    // OBTENER ARCHIVO JSON
-    // ==========================================
+    const campoId = tipo === 'diccionario' ? 'idPalabra' : 'idExpresion';
+    let nuevoId = null;
 
-    const { data, sha, path } =
-      await obtenerArchivo(tipo, agrupacion, true);
+    const actualizacion = await actualizarArchivoSeguro({
+      tipo,
+      agrupacion,
+      mensaje: `Nuevo registro en ${tipo}`,
+      modificar: data => {
+        if (tipo === 'diccionario') {
+          const nombreNuevo = String(req.body.nombrePalabra || '')
+            .trim()
+            .toLocaleLowerCase();
 
-    // ==========================================
-    // VALIDAR CAMPOS DEL DICCIONARIO
-    // ==========================================
+          if (!nombreNuevo) {
+            const error = new Error('El nombre del vocablo es obligatorio');
+            error.statusCode = 400;
+            throw error;
+          }
 
-    if (tipo === 'diccionario') {
+          const duplicado = data.find(item =>
+            String(item.idDiccionario) === String(req.body.idDiccionario) &&
+            String(item.nombrePalabra || '').trim().toLocaleLowerCase() === nombreNuevo
+          );
 
-      const nombreNuevo = String(
-        req.body.nombrePalabra || ''
-      )
-        .trim()
-        .toLocaleLowerCase();
+          if (duplicado) {
+            const error = new Error('El vocablo ya existe en esta variante lingüística.');
+            error.statusCode = 409;
+            error.duplicado = true;
+            error.idPalabra = duplicado.idPalabra;
+            error.nombrePalabra = duplicado.nombrePalabra;
+            throw error;
+          }
+        }
 
-      if (!nombreNuevo) {
-        return res.status(400).json({
-          error: 'El nombre del vocablo es obligatorio'
-        });
-      }
+        nuevoId = data.length
+          ? Math.max(...data.map(item => Number(item[campoId]) || 0)) + 1
+          : 1;
 
-      // ==========================================
-      // BUSCAR VOCABLO DUPLICADO
-      // ==========================================
-
-      const duplicado = data.find(item => {
-
-        const nombreExistente = String(
-          item.nombrePalabra || ''
-        )
-          .trim()
-          .toLocaleLowerCase();
-
-        const mismaVariante =
-          String(item.idDiccionario) ===
-          String(req.body.idDiccionario);
-
-        return (
-          mismaVariante &&
-          nombreExistente === nombreNuevo
-        );
-
-      });
-
-      if (duplicado) {
-
-        return res.status(409).json({
-
-          mensaje:
-            'El vocablo ya existe en esta variante lingüística.',
-
-          duplicado: true,
-
-          idPalabra: duplicado.idPalabra,
-
-          nombrePalabra: duplicado.nombrePalabra
-
+        data.push({
+          ...req.body,
+          [campoId]: String(nuevoId)
         });
 
+        return { id: nuevoId };
       }
-
-    }
-
-    // ==========================================
-    // GENERAR IDENTIFICADOR
-    // ==========================================
-
-    const campoId = tipo === 'diccionario'
-      ? 'idPalabra'
-      : 'idExpresion';
-
-    const nuevoId = data.length
-      ? Math.max(
-          ...data.map(item =>
-            Number(item[campoId]) || 0
-          )
-        ) + 1
-      : 1;
-
-    // ==========================================
-    // CONSTRUIR NUEVO REGISTRO
-    // ==========================================
-
-    const nuevoRegistro = {
-      ...req.body,
-      [campoId]: String(nuevoId)
-    };
-
-    data.push(nuevoRegistro);
-
-    // ==========================================
-    // GUARDAR EN GITHUB
-    // ==========================================
-
-    const respuesta = await guardarArchivoGitHub(
-      path,
-      data,
-      sha,
-      `Nuevo registro en ${tipo}`
-    );
-
-    // ==========================================
-    // ACTUALIZAR CACHÉ
-    // ==========================================
-
-    cacheData[`${tipo}_${agrupacion}`] = data;
-
-    cacheSHA[`${tipo}_${agrupacion}`] =
-      respuesta.content.sha;
+    });
 
     return res.json({
-
       mensaje: 'Registro creado correctamente',
-
-      id: nuevoId
-
+      id: actualizacion.resultado.id
     });
 
   } catch (error) {
+    console.error('ERROR CREAR REGISTRO:', error.message);
 
-    console.error(
-      'ERROR CREAR REGISTRO:',
-      error.message
-    );
+    if (error.duplicado) {
+      return res.status(409).json({
+        mensaje: error.message,
+        duplicado: true,
+        idPalabra: error.idPalabra,
+        nombrePalabra: error.nombrePalabra
+      });
+    }
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       error: error.message
     });
-
   }
-
 });
 
 // ==========================================
@@ -2055,72 +2003,61 @@ app.post('/:tipo', async (req, res) => {
 // ==========================================
 
 app.put('/:tipo/:id', async (req, res) => {
-
   try {
-
     const { tipo, id } = req.params;
     const { variante, agrupacion } = req.query;
 
     if (!['diccionario', 'corpus'].includes(tipo)) {
-      return res.status(400).json({
-        error: 'Tipo no válido'
-      });
+      return res.status(400).json({ error: 'Tipo no válido' });
     }
 
-    const { data, sha, path } =
-      await obtenerArchivo(tipo, agrupacion, true);
-
-    const campoId = tipo === 'diccionario'
-      ? 'idPalabra'
-      : 'idExpresion';
-
-    const index = data.findIndex(item =>
-      String(item[campoId]) === String(id) &&
-      String(item.idDiccionario) === String(variante)
-    );
-
-    if (index === -1) {
-      return res.status(404).json({
-        error: 'Registro no encontrado'
-      });
+    if (!agrupacion || !variante) {
+      return res.status(400).json({ error: 'Debe especificar variante y agrupacion' });
     }
 
-    const audioAnterior = data[index].audioUrl;
+    const campoId = tipo === 'diccionario' ? 'idPalabra' : 'idExpresion';
 
-    data[index] = {
-      ...data[index],
-      ...req.body
-    };
+    const actualizacion = await actualizarArchivoSeguro({
+      tipo,
+      agrupacion,
+      mensaje: `Actualizar ${tipo} ${id}`,
+      modificar: data => {
+        const index = data.findIndex(item =>
+          String(item[campoId]) === String(id) &&
+          String(tipo === 'diccionario' ? item.idDiccionario : item.idCorpus) === String(variante)
+        );
 
-    if (
-      tipo === 'diccionario' &&
-      !req.body.audioUrl &&
-      audioAnterior
-    ) {
-      data[index].audioUrl = audioAnterior;
-    }
+        if (index === -1) {
+          const error = new Error('Registro no encontrado');
+          error.statusCode = 404;
+          throw error;
+        }
 
-    const respuesta = await guardarArchivoGitHub(
-      path,
-      data,
-      sha,
-      `Actualizar ${tipo} ${id}`
-    );
+        const audioAnterior = data[index].audioUrl;
 
-    cacheData[`${tipo}_${agrupacion}`] = data;
-    cacheSHA[`${tipo}_${agrupacion}`] =
-      respuesta.content.sha;
+        data[index] = {
+          ...data[index],
+          ...req.body
+        };
+
+        if (tipo === 'diccionario' && !req.body.audioUrl && audioAnterior) {
+          data[index].audioUrl = audioAnterior;
+        }
+
+        return {
+          audioUrl: data[index].audioUrl || null
+        };
+      }
+    });
 
     return res.json({
       mensaje: 'Registro actualizado correctamente',
-      audioUrl: data[index].audioUrl || null
+      audioUrl: actualizacion.resultado.audioUrl
     });
 
   } catch (error) {
-
     console.error('ERROR ACTUALIZAR REGISTRO:', error.message);
-
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       error: error.message
     });
   }
@@ -2131,55 +2068,57 @@ app.put('/:tipo/:id', async (req, res) => {
 // ==========================================
 
 app.delete('/:tipo/:id', async (req, res) => {
-
   try {
-
     const { tipo, id } = req.params;
-    const { agrupacion } = req.query;
+    const { agrupacion, variante } = req.query;
 
     if (!['diccionario', 'corpus'].includes(tipo)) {
-      return res.status(400).json({
-        error: 'Tipo no válido'
-      });
+      return res.status(400).json({ error: 'Tipo no válido' });
     }
 
-    const { data, sha, path } =
-      await obtenerArchivo(tipo, agrupacion, true);
+    if (!agrupacion) {
+      return res.status(400).json({ error: 'Debe especificar agrupacion' });
+    }
 
-    const campoId = tipo === 'diccionario'
-      ? 'idPalabra'
-      : 'idExpresion';
+    const campoId = tipo === 'diccionario' ? 'idPalabra' : 'idExpresion';
 
-    const nuevoArray = data.filter(item =>
-      String(item[campoId]) !== String(id)
-    );
+    const actualizacion = await actualizarArchivoSeguro({
+      tipo,
+      agrupacion,
+      mensaje: `Eliminar ${tipo} ${id}`,
+      modificar: data => {
+        const filtrados = data.filter(item => {
+          const coincideId = String(item[campoId]) === String(id);
+          const coincideVariante = !variante ||
+            String(tipo === 'diccionario' ? item.idDiccionario : item.idCorpus) === String(variante);
+          return !(coincideId && coincideVariante);
+        });
 
-    const respuesta = await guardarArchivoGitHub(
-      path,
-      nuevoArray,
-      sha,
-      `Eliminar ${tipo} ${id}`
-    );
+        if (filtrados.length === data.length) {
+          const error = new Error('Registro no encontrado');
+          error.statusCode = 404;
+          throw error;
+        }
 
-    cacheData[`${tipo}_${agrupacion}`] = nuevoArray;
-    cacheSHA[`${tipo}_${agrupacion}`] =
-      respuesta.content.sha;
+        data.splice(0, data.length, ...filtrados);
+        return { eliminados: data.length };
+      }
+    });
 
     return res.json({
       mensaje: 'Registro eliminado correctamente'
     });
 
   } catch (error) {
-
     console.error('ERROR ELIMINAR REGISTRO:', error.message);
-
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       error: error.message
     });
   }
 });
 
 // ==========================================
+// CONSULTAR DICCIONARIO, CORPUS Y USUARIOS// ==========================================
 // CONSULTAR DICCIONARIO, CORPUS Y USUARIOS
 // ==========================================
 
