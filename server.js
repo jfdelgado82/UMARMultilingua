@@ -1977,7 +1977,7 @@ app.get('/:tipo', async (req, res) => {
     const { data } = await obtenerArchivo(
       tipo,
       agrupacion || 0,
-      tipo === 'diccionario'
+      false
     );
 
     let resultado = data;
