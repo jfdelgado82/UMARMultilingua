@@ -42898,19 +42898,5 @@
     "audioUrl": null,
     "imagenUrl": null,
     "aceptado": 0
-  },
-  {
-    "idPalabra": "33073",
-    "idDiccionario": "8",
-    "nombrePalabra": "zzz",
-    "lexema": null,
-    "gramema": null,
-    "estatus": null,
-    "categoriaGramatical": "",
-    "traduccion": "ZZZZZZZ",
-    "audioUrl": null,
-    "imagenUrl": "https://raw.githubusercontent.com/jfdelgado82/UMARMultilingua/8a64662f7001d57e3bc8f81e702dbfc9b58bef72/imagenes/chatino/8/33073.png",
-    "aceptado": 0,
-    "grabandoAudio": false
   }
 ]
