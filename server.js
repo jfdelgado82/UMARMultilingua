@@ -402,6 +402,58 @@ async function actualizarAudioEnDiccionario({
 
 
 // ==========================================
+// async function actualizarAudioEnCorpus({
+  agrupacion,
+  variante,
+  id,
+  audioUrl,
+  maxIntentos = 5
+}) {
+  const actualizacion = await actualizarArchivoSeguro({
+    tipo: 'diccionario',
+    agrupacion,
+    mensaje: `Actualizar audioUrl de la expresión ${id}`,
+    maxIntentos,
+    modificar: datos => {
+      const index = datos.findIndex(item =>
+        String(item.idExpresion) === String(id) &&
+        String(item.idCorpus) === String(variante)
+      );
+
+      if (index === -1) {
+        const error = new Error(
+          `No se encontró el expresión ${id} en la variante ${variante}`
+        );
+        error.statusCode = 404;
+        throw error;
+      }
+
+      datos[index] = {
+        ...datos[index],
+        audioUrl
+      };
+
+      return { index };
+    }
+  });
+
+  console.log('AUDIO URL ACTUALIZADA:', {
+    id,
+    agrupacion,
+    variante,
+    intento: actualizacion.intento,
+    sha: actualizacion.sha
+  });
+
+  return {
+    path: actualizacion.path,
+    sha: actualizacion.sha,
+    audioUrl
+  };
+}
+
+
+// ==========================================
 // ACTUALIZACIÓN SEGURA DE imagenUrl EN DICCIONARIO// ==========================================
 // ACTUALIZACIÓN SEGURA DE imagenUrl EN DICCIONARIO
 // ==========================================
@@ -430,6 +482,60 @@ async function actualizarImagenEnDiccionario({
       if (index === -1) {
         const error = new Error(
           `No se encontró el vocablo ${id} en la variante ${variante}`
+        );
+        error.statusCode = 404;
+        throw error;
+      }
+
+      datos[index] = {
+        ...datos[index],
+        imagenUrl
+      };
+
+      return { index };
+    }
+  });
+
+  console.log('IMAGEN URL ACTUALIZADA:', {
+    id,
+    agrupacion,
+    variante,
+    intento: actualizacion.intento,
+    sha: actualizacion.sha
+  });
+
+  return {
+    path: actualizacion.path,
+    sha: actualizacion.sha,
+    imagenUrl
+  };
+}
+
+
+// ==========================================
+// async function actualizarImagenEnCorpus({
+  agrupacion,
+  variante,
+  id,
+  imagenUrl,
+  resultadoInicial = null,
+  maxIntentos = 5
+}) {
+  const actualizacion = await actualizarArchivoSeguro({
+    tipo: 'diccionario',
+    agrupacion,
+    mensaje: `Actualizar imagenUrl de la expresión ${id}`,
+    maxIntentos,
+    resultadoInicial,
+    modificar: datos => {
+      const index = datos.findIndex(item =>
+        String(item.idExpresion) === String(id) &&
+        String(item.idCorpus) === String(variante)
+      );
+
+      if (index === -1) {
+        const error = new Error(
+          `No se encontró el expresión ${id} en la variante ${variante}`
         );
         error.statusCode = 404;
         throw error;
@@ -1110,6 +1216,156 @@ app.post('/diccionario/:id/audio', async (req, res) => {
 // ==========================================
 
 
+app.post('/corpus/:id/audio', async (req, res) => {
+
+  let etapa = 'inicio';
+
+  try {
+
+    const { id } = req.params;
+    const { variante, agrupacion } = req.query;
+    const { audioBase64, mimeType } = req.body;
+
+    if (!id || !variante || !agrupacion || !audioBase64) {
+      return res.status(400).json({
+        error: 'Faltan datos del audio o de la expresión'
+      });
+    }
+
+    const nombreAgrupacion =
+      agrupaciones[Number(agrupacion)];
+
+    if (!nombreAgrupacion) {
+      return res.status(400).json({
+        error: 'Agrupación no válida'
+      });
+    }
+
+    const tipoAudio = String(mimeType || 'audio/webm')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+
+    const extension = extensionesAudio[tipoAudio];
+
+    if (!extension) {
+      return res.status(400).json({
+        error: 'Formato de audio no compatible',
+        mimeType
+      });
+    }
+
+    etapa = 'validación del audio';
+
+    const buffer = convertirBase64Audio(audioBase64);
+
+    if (buffer.length < 256) {
+      return res.status(400).json({
+        error: 'El audio está vacío o incompleto'
+      });
+    }
+
+    if (buffer.length > 10 * 1024 * 1024) {
+      return res.status(413).json({
+        error: 'El audio supera el límite de 10 MB'
+      });
+    }
+
+    if (!validarFirmaAudio(buffer, extension)) {
+      return res.status(400).json({
+        error: 'El contenido no corresponde al formato declarado',
+        formato: tipoAudio
+      });
+    }
+
+    const audioPath =
+      `audios/corpus/${nombreAgrupacion}/${variante}/${id}.${extension}`;
+
+    console.log('AUDIO RECIBIDO:', {
+      id,
+      variante,
+      agrupacion,
+      extension,
+      bytes: buffer.length
+    });
+
+    // 1. Subir el audio a GitHub.
+    etapa = 'subida del audio';
+
+    const resultadoAudio = await subirAudioGitHub({
+      audioPath,
+      buffer,
+      id
+    });
+
+    // 2. Crear URL inmutable con SHA de commit.
+    etapa = 'generación de audioUrl';
+
+    const audioUrl =
+      `${BASE_URL}/corpus/${encodeURIComponent(id)}/audio` +
+      `?variante=${encodeURIComponent(variante)}` +
+      `&agrupacion=${encodeURIComponent(agrupacion)}` +
+      `&formato=${encodeURIComponent(extension)}` +
+      `&version=${encodeURIComponent(resultadoAudio.versionAudio)}`;
+
+    // 3. Actualizar JSON con control de conflictos.
+    etapa = 'actualización segura del corpus';
+
+    const resultadoJSON = await actualizarAudioEnCorpus({
+      agrupacion,
+      variante,
+      id,
+      audioUrl,
+      maxIntentos: 5
+    });
+
+    console.log('========== AUDIO GUARDADO ==========');
+
+    console.log({
+      id,
+      variante,
+      agrupacion,
+      bytes: buffer.length,
+      versionAudio: resultadoAudio.versionAudio,
+      archivoJSON: resultadoJSON.path
+    });
+
+    return res.json({
+      mensaje: 'Audio y audioUrl guardados correctamente',
+      audioUrl,
+      versionAudio: resultadoAudio.versionAudio,
+      archivoJSON: resultadoJSON.path,
+      bytes: buffer.length,
+      guardadoGitHub: true
+    });
+
+  } catch (error) {
+
+    console.error('ERROR AL GUARDAR AUDIO:', {
+      etapa,
+      mensaje: error.message,
+      status: error.response?.status,
+      github: error.response?.data
+    });
+
+    return res.status(
+      esConflictoGitHub(error) ? 409 : 500
+    ).json({
+      error: 'No fue posible completar el guardado del audio',
+      etapa,
+      detalle:
+        error.response?.data?.message ||
+        error.message,
+      codigoGitHub: error.response?.status || null
+    });
+  }
+});
+
+// ==========================================
+// GUARDAR IMAGEN DEL DICCIONARIO
+// ==========================================
+
+
 app.post('/diccionario/:id/imagen', async (req, res) => {
 
   let etapa = 'inicio';
@@ -1327,6 +1583,223 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
     // REPRODUCIR AUDIO
     // ==========================================
     
+    app.post('/corpus/:id/imagen', async (req, res) => {
+
+  let etapa = 'inicio';
+
+  try {
+
+    const { id } = req.params;
+    const { variante, agrupacion } = req.query;
+    const { imagenBase64, mimeType } = req.body;
+
+    if (!id || !variante || !agrupacion || !imagenBase64) {
+      return res.status(400).json({
+        error: 'Faltan datos de la imagen o de la expresión'
+      });
+    }
+
+    if (
+      !/^\d+$/.test(String(id)) ||
+      !/^\d+$/.test(String(variante))
+    ) {
+      return res.status(400).json({
+        error: 'El identificador o la variante no son válidos'
+      });
+    }
+
+    const nombreAgrupacion =
+      agrupaciones[Number(agrupacion)];
+
+    if (!nombreAgrupacion) {
+      return res.status(400).json({
+        error: 'Agrupación no válida'
+      });
+    }
+
+    const tipoImagen = String(mimeType || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+
+    const extension = extensionesImagen[tipoImagen];
+
+    if (!extension) {
+      return res.status(400).json({
+        error: 'Formato de imagen no compatible. Utiliza JPG, PNG, WEBP o GIF',
+        mimeType
+      });
+    }
+
+    // VALIDAR IMAGEN
+
+    etapa = 'validación de la imagen';
+
+    const buffer = convertirBase64Imagen(imagenBase64);
+
+    if (buffer.length < 16) {
+      return res.status(400).json({
+        error: 'La imagen está vacía o incompleta'
+      });
+    }
+
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(413).json({
+        error: 'La imagen supera el límite de 5 MB'
+      });
+    }
+
+    if (!validarFirmaImagen(buffer, extension)) {
+      return res.status(400).json({
+        error: 'El contenido no corresponde al formato de imagen declarado',
+        formato: tipoImagen
+      });
+    }
+
+    const imagenPath =
+      `imagenes/corpus/${nombreAgrupacion}/${variante}/${id}.${extension}`;
+
+    console.log('IMAGEN RECIBIDA:', {
+      id,
+      variante,
+      agrupacion,
+      extension,
+      bytes: buffer.length
+    });
+
+    // ==========================================
+    // OPERACIONES SIMULTÁNEAS
+    // ==========================================
+
+    etapa = 'subida de imagen y lectura del corpus';
+
+    const inicioImagen = Date.now();
+    const inicioJSON = Date.now();
+
+    // Operación 1: guardar imagen en GitHub.
+    const promesaImagen = subirImagenGitHub({
+      imagenPath,
+      buffer,
+      id
+    }).then(resultado => {
+
+      console.log('TIEMPO SUBIDA IMAGEN:', {
+        milisegundos: Date.now() - inicioImagen
+      });
+
+      return resultado;
+    });
+
+    // Operación 2: leer la versión más reciente del JSON.
+    const promesaJSON = obtenerArchivo(
+      'corpus',
+      agrupacion,
+      false
+    ).then(resultado => {
+
+      console.log('TIEMPO LECTURA JSON:', {
+        milisegundos: Date.now() - inicioJSON
+      });
+
+      return resultado;
+    });
+
+    // Ambas operaciones comienzan sin esperar una a la otra.
+    const [
+      resultadoImagen,
+      resultadoJSONInicial
+    ] = await Promise.all([
+      promesaImagen,
+      promesaJSON
+    ]);
+
+    // ==========================================
+    // GENERAR URL INMUTABLE
+    // ==========================================
+
+    etapa = 'generación de imagenUrl';
+
+    const rutaCodificada = imagenPath
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/');
+
+    const imagenUrl =
+      `https://raw.githubusercontent.com/${owner}/${repo}/` +
+      `${resultadoImagen.versionImagen}/${rutaCodificada}`;
+
+    // ==========================================
+    // ACTUALIZAR JSON
+    // ==========================================
+
+    etapa = 'actualización segura del corpus';
+
+    const inicioActualizacionJSON = Date.now();
+
+    const resultadoJSON = await actualizarImagenEnCorpus({
+      agrupacion,
+      variante,
+      id,
+      imagenUrl,
+      resultadoInicial: resultadoJSONInicial,
+      maxIntentos: 5
+    });
+
+    console.log('TIEMPO ACTUALIZACIÓN JSON:', {
+      milisegundos: Date.now() - inicioActualizacionJSON
+    });
+
+    // ==========================================
+    // CONFIRMACIÓN
+    // ==========================================
+
+    console.log('========== IMAGEN GUARDADA ==========');
+
+    console.log({
+      id,
+      variante,
+      agrupacion,
+      bytes: buffer.length,
+      versionImagen: resultadoImagen.versionImagen,
+      archivoJSON: resultadoJSON.path
+    });
+
+    return res.json({
+      mensaje: 'Imagen y imagenUrl guardadas correctamente',
+      imagenUrl,
+      versionImagen: resultadoImagen.versionImagen,
+      archivoJSON: resultadoJSON.path,
+      bytes: buffer.length,
+      guardadoGitHub: true
+    });
+
+  } catch (error) {
+
+    console.error('ERROR AL GUARDAR IMAGEN:', {
+      etapa,
+      mensaje: error.message,
+      status: error.response?.status,
+      github: error.response?.data
+    });
+
+    return res.status(
+      esConflictoGitHub(error) ? 409 : 500
+    ).json({
+      error: 'No fue posible completar el guardado de la imagen',
+      etapa,
+      detalle:
+        error.response?.data?.message ||
+        error.message,
+      codigoGitHub: error.response?.status || null
+    });
+  }
+});
+
+    
+    // ==========================================
+    // REPRODUCIR AUDIO
+    // ==========================================
+    
     app.get('/diccionario/:id/audio', async (req, res) => {
     
       try {
@@ -1389,6 +1862,196 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
     
           const path =
             `audios/${nombreAgrupacion}/${variante}/${id}.${extension}`;
+    
+          const url =
+            `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(referenciaGitHub)}/${path
+              .split('/')
+              .map(segment => encodeURIComponent(segment))
+              .join('/')}`;
+    
+          try {
+    
+            const respuesta = await axios.get(url, {
+              responseType: 'arraybuffer',
+              headers: {
+                'Cache-Control': 'no-cache'
+              },
+              validateStatus: status => status === 200
+            });
+    
+            if (respuesta.data?.byteLength > 0) {
+              audio = Buffer.from(respuesta.data);
+              extensionEncontrada = extension;
+              break;
+            }
+    
+          } catch (error) {
+    
+            if (error.response?.status !== 404) {
+              throw error;
+            }
+          }
+        }
+    
+        if (!audio) {
+          return res.status(404).json({
+            error: 'Audio no encontrado'
+          });
+        }
+    
+        const tamano = audio.length;
+        const range = req.headers.range;
+    
+        res.set({
+          'Content-Type': tiposMime[extensionEncontrada],
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'X-Content-Type-Options': 'nosniff'
+        });
+    
+        if (range) {
+    
+          const coincidencia = /^bytes=(\d*)-(\d*)$/.exec(range);
+    
+          if (!coincidencia) {
+            return res.status(416)
+              .set('Content-Range', `bytes */${tamano}`)
+              .end();
+          }
+    
+          let inicio;
+          let fin;
+    
+          if (coincidencia[1] === '') {
+    
+            const cantidad = Number(coincidencia[2]);
+    
+            if (!cantidad || cantidad <= 0) {
+              return res.status(416)
+                .set('Content-Range', `bytes */${tamano}`)
+                .end();
+            }
+    
+            inicio = Math.max(0, tamano - cantidad);
+            fin = tamano - 1;
+    
+          } else {
+    
+            inicio = Number(coincidencia[1]);
+            fin = coincidencia[2]
+              ? Number(coincidencia[2])
+              : tamano - 1;
+          }
+    
+          if (
+            !Number.isSafeInteger(inicio) ||
+            !Number.isSafeInteger(fin) ||
+            inicio < 0 ||
+            inicio >= tamano ||
+            fin < inicio
+          ) {
+            return res.status(416)
+              .set('Content-Range', `bytes */${tamano}`)
+              .end();
+          }
+    
+          fin = Math.min(fin, tamano - 1);
+    
+          const fragmento = audio.subarray(inicio, fin + 1);
+    
+          res.status(206);
+    
+          res.set({
+            'Content-Length': fragmento.length,
+            'Content-Range': `bytes ${inicio}-${fin}/${tamano}`
+          });
+    
+          return res.end(fragmento);
+        }
+    
+        res.set('Content-Length', tamano);
+    
+        return res.status(200).end(audio);
+    
+      } catch (error) {
+    
+        console.error(
+          'ERROR AL REPRODUCIR AUDIO:',
+          error.response?.data || error.message
+        );
+    
+        return res.status(500).json({
+          error: 'No fue posible recuperar el audio',
+          detalle: error.message
+        });
+      }
+    });
+    
+    // ==========================================
+    // app.get('/corpus/:id/audio', async (req, res) => {
+    
+      try {
+    
+        const { id } = req.params;
+    
+        const {
+          variante,
+          agrupacion,
+          formato,
+          version
+        } = req.query;
+    
+        const nombreAgrupacion =
+          agrupaciones[Number(agrupacion)];
+    
+        if (!nombreAgrupacion || !variante || !id) {
+          return res.status(400).json({
+            error: 'Parámetros incompletos'
+          });
+        }
+    
+        let referenciaGitHub = branch;
+    
+        if (version !== undefined) {
+    
+          if (
+            typeof version !== 'string' ||
+            !/^[a-f0-9]{40}$/i.test(version)
+          ) {
+            return res.status(400).json({
+              error: 'Versión del audio no válida'
+            });
+          }
+    
+          referenciaGitHub = version;
+        }
+    
+        const disponibles = ['webm', 'm4a', 'ogg', 'mp3', 'wav'];
+    
+        const solicitado = String(formato || '').toLowerCase();
+    
+        if (solicitado && !disponibles.includes(solicitado)) {
+          return res.status(400).json({
+            error: 'Formato no válido'
+          });
+        }
+    
+        const extensiones = solicitado
+          ? [
+              solicitado,
+              ...disponibles.filter(e => e !== solicitado)
+            ]
+          : disponibles;
+    
+        let audio = null;
+        let extensionEncontrada = null;
+    
+        for (const extension of extensiones) {
+    
+          const path =
+            `audios/corpus/${nombreAgrupacion}/${variante}/${id}.${extension}`;
     
           const url =
             `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(referenciaGitHub)}/${path
@@ -2034,25 +2697,32 @@ app.put('/:tipo/:id', async (req, res) => {
         }
 
         const audioAnterior = data[index].audioUrl;
+        const imagenAnterior = data[index].imagenUrl;
 
         data[index] = {
           ...data[index],
           ...req.body
         };
 
-        if (tipo === 'diccionario' && !req.body.audioUrl && audioAnterior) {
+        if (!req.body.audioUrl && audioAnterior) {
           data[index].audioUrl = audioAnterior;
         }
 
+        if (!req.body.imagenUrl && imagenAnterior) {
+          data[index].imagenUrl = imagenAnterior;
+        }
+
         return {
-          audioUrl: data[index].audioUrl || null
+          audioUrl: data[index].audioUrl || null,
+          imagenUrl: data[index].imagenUrl || null
         };
       }
     });
 
     return res.json({
       mensaje: 'Registro actualizado correctamente',
-      audioUrl: actualizacion.resultado.audioUrl
+      audioUrl: actualizacion.resultado.audioUrl,
+      imagenUrl: actualizacion.resultado.imagenUrl
     });
 
   } catch (error) {
@@ -2156,7 +2826,7 @@ app.get('/:tipo', async (req, res) => {
 
     let resultado = data;
 
-    if (tipo === 'diccionario') {
+    if (tipo === 'diccionario' || tipo === 'corpus') {
 
       resultado = resultado.map(item => ({
         ...item,
@@ -2206,7 +2876,11 @@ app.get('/:tipo', async (req, res) => {
               item.gramema,
               item.categoriaGramatical
             ]
-          : Object.values(item);
+          : [
+              item.expresion,
+              item.traduccion,
+              item.estatus
+            ];
 
         return campos.some(valor =>
           normalizar(valor).includes(busqueda)
