@@ -402,7 +402,7 @@ async function actualizarAudioEnDiccionario({
 
 
 // ==========================================
-// async function actualizarAudioEnCorpus({
+async function actualizarAudioEnCorpus({
   agrupacion,
   variante,
   id,
@@ -513,7 +513,7 @@ async function actualizarImagenEnDiccionario({
 
 
 // ==========================================
-// async function actualizarImagenEnCorpus({
+async function actualizarImagenEnCorpus({
   agrupacion,
   variante,
   id,
