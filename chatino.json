@@ -42924,5 +42924,18 @@
     "audioUrl": null,
     "imagenUrl": null,
     "aceptado": 0
+  },
+  {
+    "idPalabra": "33075",
+    "idDiccionario": "8",
+    "nombrePalabra": "wwww",
+    "lexema": null,
+    "gramema": null,
+    "estatus": null,
+    "categoriaGramatical": "",
+    "traduccion": "wwww",
+    "audioUrl": null,
+    "imagenUrl": null,
+    "aceptado": 0
   }
 ]
