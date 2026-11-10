@@ -216,14 +216,23 @@ async function guardarArchivoGitHub(path, data, sha, mensaje) {
 
   validarTokenGitHub();
 
+  const inicioSerializacion = Date.now();
+
+  const contenido = JSON.stringify(data, null, 2);
+
+  const contenidoBase64 = Buffer
+    .from(contenido, 'utf8')
+    .toString('base64');
+
+  const tiempoSerializacion = Date.now() - inicioSerializacion;
+
+  const inicioGitHub = Date.now();
+
   const response = await axios.put(
     githubContentsUrl(path),
     {
       message: mensaje,
-      content: Buffer.from(
-        JSON.stringify(data, null, 2),
-        'utf8'
-      ).toString('base64'),
+      content: contenidoBase64,
       sha,
       branch
     },
@@ -232,9 +241,18 @@ async function guardarArchivoGitHub(path, data, sha, mensaje) {
     }
   );
 
+  const tiempoGitHub = Date.now() - inicioGitHub;
+
   if (!response.data.content?.sha) {
     throw new Error(`GitHub no confirmó la actualización de ${path}`);
   }
+
+  console.log('TIEMPOS GUARDADO GITHUB:', {
+    archivo: path,
+    serializacion: tiempoSerializacion,
+    escrituraGitHub: tiempoGitHub,
+    total: tiempoSerializacion + tiempoGitHub
+  });
 
   return response.data;
 }
