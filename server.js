@@ -41,6 +41,7 @@ const rutas = {
 
 const cacheData = {};
 const cacheSHA = {};
+const cacheSHAImagenes = new Map();
 
 const agrupaciones = {
   1: 'zapoteco',
@@ -541,33 +542,89 @@ function validarFirmaImagen(buffer, extension) {
 // SUBIR O REEMPLAZAR IMAGEN EN GITHUB
 // ==========================================
 
+
+// ==========================================
+// SUBIR O REEMPLAZAR IMAGEN EN GITHUB
+// OPTIMIZADO CON CACHÉ DE SHA Y REINTENTOS
+// ==========================================
+
 async function subirImagenGitHub({
   imagenPath,
   buffer,
   id,
   maxIntentos = 5
 }) {
+
   validarTokenGitHub();
 
   const url = githubContentsUrl(imagenPath);
 
-  for (let intento = 1; intento <= maxIntentos; intento++) {
+  // La caché se identifica por rama y ruta.
+  // Esto evita reutilizar SHA de otra rama.
+  const cacheKey = `${branch}:${imagenPath}`;
+
+  const inicioTotal = Date.now();
+
+  let consultaGitHub = 0;
+  let escrituraGitHub = 0;
+  let usoCache = false;
+
+  for (
+    let intento = 1;
+    intento <= maxIntentos;
+    intento++
+  ) {
+
     try {
-      let shaImagen;
 
-      try {
-        const existente = await axios.get(url, {
-          headers: githubHeaders(),
-          params: { ref: branch }
-        });
+      let shaImagen = cacheSHAImagenes.get(cacheKey);
 
-        shaImagen = existente.data.sha;
+      usoCache = Boolean(shaImagen);
 
-      } catch (error) {
-        if (error.response?.status !== 404) {
-          throw error;
+      // ==========================================
+      // CONSULTAR SHA SOLAMENTE SI NO HAY CACHÉ
+      // ==========================================
+
+      if (!shaImagen) {
+
+        const inicioConsulta = Date.now();
+
+        try {
+
+          const existente = await axios.get(url, {
+            headers: githubHeaders(),
+            params: {
+              ref: branch
+            }
+          });
+
+          shaImagen = existente.data.sha;
+
+          if (!shaImagen) {
+            throw new Error(
+              'GitHub no devolvió el SHA de la imagen existente'
+            );
+          }
+
+        } catch (error) {
+
+          if (error.response?.status !== 404) {
+            throw error;
+          }
+
+          // El archivo todavía no existe.
+          // Se creará sin enviar SHA.
+          shaImagen = null;
         }
+
+        consultaGitHub += Date.now() - inicioConsulta;
       }
+
+      // ==========================================
+      // SUBIR O REEMPLAZAR IMAGEN
+      // ==========================================
+
+      const inicioEscritura = Date.now();
 
       const respuesta = await axios.put(
         url,
@@ -575,31 +632,102 @@ async function subirImagenGitHub({
           message: `Guardar imagen del vocablo ${id}`,
           content: buffer.toString('base64'),
           branch,
-          ...(shaImagen ? { sha: shaImagen } : {})
+
+          ...(shaImagen
+            ? { sha: shaImagen }
+            : {})
         },
         {
           headers: githubHeaders()
         }
       );
 
-      const versionImagen = respuesta.data.commit?.sha;
+      escrituraGitHub += Date.now() - inicioEscritura;
+
+      // ==========================================
+      // VALIDAR RESPUESTA DE GITHUB
+      // ==========================================
+
+      const versionImagen =
+        respuesta.data.commit?.sha;
+
+      const nuevoSHA =
+        respuesta.data.content?.sha;
 
       if (
         !versionImagen ||
         !/^[a-f0-9]{40}$/i.test(versionImagen)
       ) {
+
         throw new Error(
           'GitHub no devolvió un SHA de commit válido para la imagen'
         );
       }
 
+      if (
+        !nuevoSHA ||
+        !/^[a-f0-9]{40}$/i.test(nuevoSHA)
+      ) {
+
+        throw new Error(
+          'GitHub no devolvió un SHA válido para el archivo de imagen'
+        );
+      }
+
+      // ==========================================
+      // ACTUALIZAR CACHÉ DESPUÉS DEL ÉXITO
+      // ==========================================
+
+      cacheSHAImagenes.set(
+        cacheKey,
+        nuevoSHA
+      );
+
+      console.log('TIEMPOS SUBIDA IMAGEN:', {
+        id,
+        intento,
+        usoCache,
+        consultaGitHub,
+        escrituraGitHub,
+        total: Date.now() - inicioTotal
+      });
+
       return {
         versionImagen,
-        shaImagen: respuesta.data.content?.sha
+        shaImagen: nuevoSHA
       };
 
     } catch (error) {
-      if (!esConflictoGitHub(error) || intento === maxIntentos) {
+
+      // ==========================================
+      // RECUPERACIÓN ANTE SHA DESACTUALIZADO
+      // ==========================================
+
+      const conflicto = esConflictoGitHub(error);
+
+      // Si utilizamos un SHA almacenado y GitHub
+      // lo rechaza, debemos invalidarlo.
+      if (conflicto || (usoCache && error.response?.status === 404)) {
+
+        cacheSHAImagenes.delete(cacheKey);
+
+        console.warn(
+          'SHA de imagen invalidado:',
+          {
+            id,
+            intento,
+            status: error.response?.status
+          }
+        );
+
+      } else {
+
+        // Los errores distintos de conflicto no se
+        // deben ocultar mediante reintentos.
+        throw error;
+      }
+
+      if (intento === maxIntentos) {
         throw error;
       }
 
@@ -608,7 +736,10 @@ async function subirImagenGitHub({
         error.response?.data || error.message
       );
 
-      await esperar(150 * intento + Math.floor(Math.random() * 100));
+      await esperar(
+        150 * intento +
+        Math.floor(Math.random() * 100)
+      );
     }
   }
 
