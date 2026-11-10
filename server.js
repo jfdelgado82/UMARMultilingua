@@ -1990,7 +1990,7 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
     });
     
     // ==========================================
-    // app.get('/corpus/:id/audio', async (req, res) => {
+    app.get('/corpus/:id/audio', async (req, res) => {
     
       try {
     
