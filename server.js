@@ -410,7 +410,7 @@ async function actualizarAudioEnDiccionario({
   maxIntentos = 5
 }) {
   const actualizacion = await actualizarArchivoSeguro({
-    tipo: 'diccionario',
+    tipo: 'corpus',
     agrupacion,
     mensaje: `Actualizar audioUrl de la expresión ${id}`,
     maxIntentos,
@@ -522,7 +522,7 @@ async function actualizarImagenEnDiccionario({
   maxIntentos = 5
 }) {
   const actualizacion = await actualizarArchivoSeguro({
-    tipo: 'diccionario',
+    tipo: 'corpus',
     agrupacion,
     mensaje: `Actualizar imagenUrl de la expresión ${id}`,
     maxIntentos,
