@@ -335,28 +335,42 @@ async function actualizarAudioEnDiccionario({
 // ACTUALIZACIÓN SEGURA DE imagenUrl EN DICCIONARIO
 // ==========================================
 
+
 async function actualizarImagenEnDiccionario({
   agrupacion,
   variante,
   id,
   imagenUrl,
+  resultadoInicial = null,
   maxIntentos = 5
 }) {
+
   const cacheKey = `diccionario_${agrupacion}`;
 
+  // Aprovechar la lectura anticipada cuando está disponible.
+  let resultadoPendiente = resultadoInicial;
+
   for (let intento = 1; intento <= maxIntentos; intento++) {
+
     try {
-      // Leer siempre la versión más reciente para evitar sobrescribir
-      // cambios realizados por otros usuarios.
-      const resultado = await obtenerArchivo(
-        'diccionario',
-        agrupacion,
-        true
-      );
+
+      const resultado = resultadoPendiente ||
+        await obtenerArchivo(
+          'diccionario',
+          agrupacion,
+          true
+        );
+
+      // La lectura anticipada solamente se utiliza una vez.
+      resultadoPendiente = null;
 
       const { data, sha, path } = resultado;
 
-      const index = data.findIndex(item =>
+      // Trabajar sobre una copia para no modificar la caché
+      // antes de confirmar el guardado en GitHub.
+      const datosActualizados = [...data];
+
+      const index = datosActualizados.findIndex(item =>
         String(item.idPalabra) === String(id) &&
         String(item.idDiccionario) === String(variante)
       );
@@ -367,19 +381,20 @@ async function actualizarImagenEnDiccionario({
         );
       }
 
-      data[index] = {
-        ...data[index],
+      datosActualizados[index] = {
+        ...datosActualizados[index],
         imagenUrl
       };
 
       const respuesta = await guardarArchivoGitHub(
         path,
-        data,
+        datosActualizados,
         sha,
         `Actualizar imagenUrl del vocablo ${id}`
       );
 
-      cacheData[cacheKey] = data;
+      // Actualizar caché únicamente después de confirmar GitHub.
+      cacheData[cacheKey] = datosActualizados;
       cacheSHA[cacheKey] = respuesta.content.sha;
 
       console.log('IMAGEN URL ACTUALIZADA:', {
@@ -397,7 +412,11 @@ async function actualizarImagenEnDiccionario({
       };
 
     } catch (error) {
-      if (!esConflictoGitHub(error) || intento === maxIntentos) {
+
+      if (
+        !esConflictoGitHub(error) ||
+        intento === maxIntentos
+      ) {
         throw error;
       }
 
@@ -406,7 +425,9 @@ async function actualizarImagenEnDiccionario({
         error.response?.data || error.message
       );
 
-      await esperar(150 * intento + Math.floor(Math.random() * 100));
+      await esperar(
+        150 * intento + Math.floor(Math.random() * 100)
+      );
     }
   }
 
@@ -414,6 +435,7 @@ async function actualizarImagenEnDiccionario({
     'No fue posible actualizar imagenUrl después de varios intentos'
   );
 }
+
 
 // ==========================================
 // VALIDACIÓN DE IMÁGENES
@@ -913,10 +935,13 @@ app.post('/diccionario/:id/audio', async (req, res) => {
 // GUARDAR IMAGEN DEL DICCIONARIO
 // ==========================================
 
+
 app.post('/diccionario/:id/imagen', async (req, res) => {
+
   let etapa = 'inicio';
 
   try {
+
     const { id } = req.params;
     const { variante, agrupacion } = req.query;
     const { imagenBase64, mimeType } = req.body;
@@ -927,14 +952,17 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
       });
     }
 
-    // Evitar que parámetros se utilicen para construir rutas arbitrarias.
-    if (!/^\d+$/.test(String(id)) || !/^\d+$/.test(String(variante))) {
+    if (
+      !/^\d+$/.test(String(id)) ||
+      !/^\d+$/.test(String(variante))
+    ) {
       return res.status(400).json({
         error: 'El identificador o la variante no son válidos'
       });
     }
 
-    const nombreAgrupacion = agrupaciones[Number(agrupacion)];
+    const nombreAgrupacion =
+      agrupaciones[Number(agrupacion)];
 
     if (!nombreAgrupacion) {
       return res.status(400).json({
@@ -956,6 +984,8 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
       });
     }
 
+    // VALIDAR IMAGEN
+
     etapa = 'validación de la imagen';
 
     const buffer = convertirBase64Imagen(imagenBase64);
@@ -966,7 +996,6 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
       });
     }
 
-    // Límite de 5 MB por imagen.
     if (buffer.length > 5 * 1024 * 1024) {
       return res.status(413).json({
         error: 'La imagen supera el límite de 5 MB'
@@ -991,77 +1020,134 @@ app.post('/diccionario/:id/imagen', async (req, res) => {
       bytes: buffer.length
     });
 
-    // 1. Guardar la imagen en GitHub.
-    etapa = 'subida de la imagen';
+    // ==========================================
+    // OPERACIONES SIMULTÁNEAS
+    // ==========================================
 
-    const resultadoImagen = await subirImagenGitHub({
+    etapa = 'subida de imagen y lectura del diccionario';
+
+    const inicioImagen = Date.now();
+    const inicioJSON = Date.now();
+
+    // Operación 1: guardar imagen en GitHub.
+    const promesaImagen = subirImagenGitHub({
       imagenPath,
       buffer,
       id
-    });
-        // 2. Crear una URL inmutable vinculada al commit de la imagen.
-        etapa = 'generación de imagenUrl';
+    }).then(resultado => {
 
-        const rutaCodificada = imagenPath
-          .split('/')
-          .map(segment => encodeURIComponent(segment))
-          .join('/');
-    
-        const imagenUrl =
-          `https://raw.githubusercontent.com/${owner}/${repo}/` +
-          `${resultadoImagen.versionImagen}/${rutaCodificada}`;
-    
-        // 3. Actualizar imagenUrl en el registro del diccionario.
-        etapa = 'actualización segura del diccionario';
-    
-        const resultadoJSON = await actualizarImagenEnDiccionario({
-          agrupacion,
-          variante,
-          id,
-          imagenUrl,
-          maxIntentos: 5
-        });
-    
-        console.log('========== IMAGEN GUARDADA ==========');
-    
-        console.log({
-          id,
-          variante,
-          agrupacion,
-          bytes: buffer.length,
-          versionImagen: resultadoImagen.versionImagen,
-          archivoJSON: resultadoJSON.path
-        });
-    
-        return res.json({
-          mensaje: 'Imagen y imagenUrl guardadas correctamente',
-          imagenUrl,
-          versionImagen: resultadoImagen.versionImagen,
-          archivoJSON: resultadoJSON.path,
-          bytes: buffer.length,
-          guardadoGitHub: true
-        });
-    
-      } catch (error) {
-        console.error('ERROR AL GUARDAR IMAGEN:', {
-          etapa,
-          mensaje: error.message,
-          status: error.response?.status,
-          github: error.response?.data
-        });
-    
-        return res.status(
-          esConflictoGitHub(error) ? 409 : 500
-        ).json({
-          error: 'No fue posible completar el guardado de la imagen',
-          etapa,
-          detalle:
-            error.response?.data?.message ||
-            error.message,
-          codigoGitHub: error.response?.status || null
-        });
-      }
+      console.log('TIEMPO SUBIDA IMAGEN:', {
+        milisegundos: Date.now() - inicioImagen
+      });
+
+      return resultado;
     });
+
+    // Operación 2: leer la versión más reciente del JSON.
+    const promesaJSON = obtenerArchivo(
+      'diccionario',
+      agrupacion,
+      true
+    ).then(resultado => {
+
+      console.log('TIEMPO LECTURA JSON:', {
+        milisegundos: Date.now() - inicioJSON
+      });
+
+      return resultado;
+    });
+
+    // Ambas operaciones comienzan sin esperar una a la otra.
+    const [
+      resultadoImagen,
+      resultadoJSONInicial
+    ] = await Promise.all([
+      promesaImagen,
+      promesaJSON
+    ]);
+
+    // ==========================================
+    // GENERAR URL INMUTABLE
+    // ==========================================
+
+    etapa = 'generación de imagenUrl';
+
+    const rutaCodificada = imagenPath
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/');
+
+    const imagenUrl =
+      `https://raw.githubusercontent.com/${owner}/${repo}/` +
+      `${resultadoImagen.versionImagen}/${rutaCodificada}`;
+
+    // ==========================================
+    // ACTUALIZAR JSON
+    // ==========================================
+
+    etapa = 'actualización segura del diccionario';
+
+    const inicioActualizacionJSON = Date.now();
+
+    const resultadoJSON = await actualizarImagenEnDiccionario({
+      agrupacion,
+      variante,
+      id,
+      imagenUrl,
+      resultadoInicial: resultadoJSONInicial,
+      maxIntentos: 5
+    });
+
+    console.log('TIEMPO ACTUALIZACIÓN JSON:', {
+      milisegundos: Date.now() - inicioActualizacionJSON
+    });
+
+    // ==========================================
+    // CONFIRMACIÓN
+    // ==========================================
+
+    console.log('========== IMAGEN GUARDADA ==========');
+
+    console.log({
+      id,
+      variante,
+      agrupacion,
+      bytes: buffer.length,
+      versionImagen: resultadoImagen.versionImagen,
+      archivoJSON: resultadoJSON.path
+    });
+
+    return res.json({
+      mensaje: 'Imagen y imagenUrl guardadas correctamente',
+      imagenUrl,
+      versionImagen: resultadoImagen.versionImagen,
+      archivoJSON: resultadoJSON.path,
+      bytes: buffer.length,
+      guardadoGitHub: true
+    });
+
+  } catch (error) {
+
+    console.error('ERROR AL GUARDAR IMAGEN:', {
+      etapa,
+      mensaje: error.message,
+      status: error.response?.status,
+      github: error.response?.data
+    });
+
+    return res.status(
+      esConflictoGitHub(error) ? 409 : 500
+    ).json({
+      error: 'No fue posible completar el guardado de la imagen',
+      etapa,
+      detalle:
+        error.response?.data?.message ||
+        error.message,
+      codigoGitHub: error.response?.status || null
+    });
+  }
+});
+
     
     // ==========================================
     // REPRODUCIR AUDIO
