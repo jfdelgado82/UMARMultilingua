@@ -26,5 +26,12 @@
     "contraseña": "$2a$10$eSINigo4s2Xge80eWbHPMeAeB2hW0WlBCC.s1lRd2hE3sGqZdCCbO",
     "rol": "linguista",
     "activo": true
+  },
+  {
+    "nombre": "celestino@aulavirtual.umar.mx",
+    "correoElectronico": "celestino",
+    "contraseña": "$2a$10$SFS63Mh0urOH.XSRcc12N.OC3Pccw5o91APLKOL79yPKLLxX8sXe6",
+    "rol": "usuario",
+    "activo": false
   }
 ]
