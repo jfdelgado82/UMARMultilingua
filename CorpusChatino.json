@@ -39,7 +39,8 @@
     "estatus": null,
     "multimedia": null,
     "traduccion": "todava no han llegado",
-    "audioUrl": "https://umarmultilingua.onrender.com/corpus/5452/audio?variante=6&agrupacion=2&formato=webm&version=d93be3b6996e8025985da3f9f4976a16c65370f2"
+    "audioUrl": "https://umarmultilingua.onrender.com/corpus/5452/audio?variante=6&agrupacion=2&formato=webm&version=d93be3b6996e8025985da3f9f4976a16c65370f2",
+    "imagenUrl": "https://raw.githubusercontent.com/jfdelgado82/UMARMultilingua/57e4a1b6c620db597ccc87c1bb67d574b915af60/imagenes/corpus/chatino/6/5452.png"
   },
   {
     "idExpresion": "5453",
