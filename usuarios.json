@@ -32,6 +32,6 @@
     "correoElectronico": "celestino",
     "contraseña": "$2a$10$SFS63Mh0urOH.XSRcc12N.OC3Pccw5o91APLKOL79yPKLLxX8sXe6",
     "rol": "usuario",
-    "activo": false
+    "activo": true
   }
 ]
