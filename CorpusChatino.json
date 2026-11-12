@@ -13848,5 +13848,15 @@
     "audioUrl": null,
     "imagenUrl": null,
     "aceptado": 0
+  },
+  {
+    "idExpresion": "7179",
+    "idCorpus": "6",
+    "expresion": "aaaa aaaa aaaaa aaaa",
+    "estatus": "",
+    "traduccion": "asdasdasdadasd",
+    "audioUrl": null,
+    "imagenUrl": null,
+    "aceptado": 0
   }
 ]
