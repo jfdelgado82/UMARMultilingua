@@ -42899,5 +42899,18 @@
     "audioUrl": null,
     "imagenUrl": "https://raw.githubusercontent.com/jfdelgado82/UMARMultilingua/a3950ed42bdf10072b61cb8361216c91854ae3a6/imagenes/chatino/8/33072.png",
     "aceptado": 1
+  },
+  {
+    "idPalabra": "33073",
+    "idDiccionario": "6",
+    "nombrePalabra": "computadora",
+    "lexema": null,
+    "gramema": null,
+    "estatus": null,
+    "categoriaGramatical": "",
+    "traduccion": "ni yuan bi",
+    "audioUrl": null,
+    "imagenUrl": null,
+    "aceptado": 0
   }
 ]
